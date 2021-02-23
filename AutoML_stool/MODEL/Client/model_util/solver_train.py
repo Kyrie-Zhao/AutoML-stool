@@ -191,7 +191,7 @@ class Solver_Train(object):
 
 
 
-    def test(self):
+    def test(self,action):
 
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32, shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c], name='image_placeholder')
@@ -203,6 +203,7 @@ class Solver_Train(object):
         # create model and build graph
         self.B_VGG_instance = B_VGGNet(num_class=self.num_class)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder, is_train=self.training_flag)
+
 
         # prediction from branches
         pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
@@ -219,131 +220,73 @@ class Solver_Train(object):
         train_acc3 = top_k_error(pred3, self.label_placeholder, 1)
 
         sess = tf.Session()
-
-
-        # Construct saver and restore graph
-        #conv2_tmp = sess.graph.get_tensor_by_name('conv2_maxpool')
-        #conv3_tmp = sess.graph.get_tensor_by_name('conv3_relu')
         saver = tf.train.Saver()
         saver.restore(sess, os.path.join(self.checkpoint_path, 'B_VGG.ckpt'))
 
-
-        #print(sess.graph.get_tensor_by_name('image_placeholder:0').get_shape().as_list())
-
         # load all data in memory
         _, (val_data, val_label) = self.load_data()
-        exit0_crrect = 0
-        exit1_crrect = 0
-        exit2_crrect = 0
-        exit3_crrect = 0
+        coarse_crrect = 0
+        fine1_crrect = 0
+        fine2_crrect = 0
+        fine3_crrect = 0
 
-        exit0_num = 0
-        exit1_num = 0
-        exit2_num = 0
-        exit3_num = 0
+        coarse_num = 0
+        fine1_num = 0
+        fine2_num = 0
+        fine3_num = 0
 
         strWriter = ""
         # inference / test
         print(self.test_step)
         time_average_arrary = []
         acc_arrary = []
-        earlyexit_thresholds_list = [[10,0,0],[0,10,0],[0,0,10],[0,0,0]]
-        for tp in range(0,4):
-            self.earlyexit_thresholds = earlyexit_thresholds_list[tp]
-            for test_step_num in range(self.test_step):
-                #print(test_step_num)
-                test_data_batch, test_label_batch = self._get_val_batch(val_data, val_label, self.test_batch_size)
-                #print(type(test_label_batch[0]))
-                infer_start = time.time()
 
-                # early exit 0
-                conv4_out, exit0_pred, test_acc0 = sess.run([self.B_VGG_instance.conv4, pred0, train_acc0], feed_dict={self.img_placeholder: test_data_batch,
-                                                                                                                                self.label_placeholder: test_label_batch,
-                                                                                                                                self.training_flag: False})
-                #print(test_acc0)
-                if self._entropy_cal(exit0_pred) < self.earlyexit_thresholds[0]:
-                    #print('Exit from branch 0: ', self._entropy_cal(exit0_pred), exit0_pred)
-                    exit0_num += 1
-                    if test_acc0 == 1:#np.argmax(exit0_pred, -1)[0] == test_label_batch[-1]:
-                        #print('correct')
-                        exit0_crrect += 1
-                    infer_time = time.time() - infer_start
-                    self.inference_time['exit%d'%(0)].append(infer_time)
-                    continue
+        #Action
+        convertPosition = [self.B_VGG_instance.conv1,self.B_VGG_instance.conv2,self.B_VGG_instance.max_pool1,self.B_VGG_instance.conv3,self.B_VGG_instance.conv4,self.B_VGG_instance.max_pool2,self.B_VGG_instance.conv5,self.B_VGG_instance.conv6,self.B_VGG_instance.conv7,self.B_VGG_instance.max_pool3,self.B_VGG_instance.conv8,self.B_VGG_instance.conv9,self.B_VGG_instance.conv10,self.B_VGG_instance.max_pool4,self.B_VGG_instance.conv11,self.B_VGG_instance.conv12,self.B_VGG_instance.conv13]
+        action_coarse = action[0]
+        action_fine_1 = action[1]
+        action_fine_2 = action[2]
+        action_fine_3 = action[3]
 
-                # early exit 1
-                conv7_out, exit1_pred, test_acc1 = sess.run([self.B_VGG_instance.conv7, pred1, train_acc1], feed_dict={self.B_VGG_instance.conv4: conv4_out,
-                                                                                                                                self.label_placeholder: test_label_batch,
-                                                                                                                                self.training_flag: False})
-                if self._entropy_cal(exit1_pred) < self.earlyexit_thresholds[1]:
-                    #print('Exit from branch 1: ', self._entropy_cal(exit1_pred), exit1_pred)
-                    exit1_num += 1
-                    if test_acc1 == 1: #np.argmax(exit0_pred, -1)[0] == test_label_batch[-1]:
-                        #print('correct')
-                        exit1_crrect += 1
-                    infer_time = time.time() - infer_start
-                    self.inference_time['exit%d'%(1)].append(infer_time)
-                    continue
+        for test_step_num in range(self.test_step):
+            #get dataset
+            test_data_batch, test_label_batch = self._get_val_batch(val_data, val_label, self.test_batch_size)
+            coarse_point, fine_1_point,fine_2_point,fine_3_point,exit0_pred, test_acc0 = sess.run([convertPosition[action[0]], convertPosition[action[1]]，convertPosition[action[2]]，convertPosition[action[3]]，pred0, train_acc0], feed_dict={self.img_placeholder: test_data_batch,self.label_placeholder: test_label_batch,self.training_flag: False})
+            coarse_num+=1
+            if (test_acc0 == 1):
+                coarse_crrect+=1
+            #大分类
+            if(np.argmax(exit0_pred)==0):
+                fine1_num += 1
+                if(action_coarse>=action_fine_1):
+                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1], feed_dict={convertPosition[action[1]]: fine_1_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                else:
+                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                if (test_acc1 == 1):
+                    fine1_crrect += 1
+            elif(np.argmax(exit0_pred)==1):
+                fine2_num += 1
+                if(action_coarse>=action_fine_1):
+                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], feed_dict={convertPosition[action[2]]: fine_2_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                else:
+                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                if (test_acc2 == 1):
+                    fine2_crrect += 1
+            elif(np.argmax(exit0_pred)==2):
+                fine3_num += 1
+                if(action_coarse>=action_fine_1):
+                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], feed_dict={convertPosition[action[3]]: fine_3_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                else:
+                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                if (test_acc3 == 1):
+                    fine3_crrect += 1
 
-                # early exit 2
-                conv10_out, exit2_pred, test_acc2 = sess.run([self.B_VGG_instance.conv10, pred2, train_acc2], feed_dict={self.B_VGG_instance.conv7: conv7_out,
-                                                                                                                                self.label_placeholder: test_label_batch,
-                                                                                                                                self.training_flag: False})
-                if self._entropy_cal(exit2_pred) < self.earlyexit_thresholds[2]:
-                    #print('Exit from branch 1: ', self._entropy_cal(exit1_pred), exit1_pred)
-                    exit2_num += 1
-                    if test_acc2 == 1: #np.argmax(exit0_pred, -1)[0] == test_label_batch[-1]:
-                        #print('correct')
-                        exit2_crrect += 1
-                    infer_time = time.time() - infer_start
-                    self.inference_time['exit%d'%(2)].append(infer_time)
-                    continue
-
-                # early exit 3
-                exit3_pred, test_acc3 = sess.run([pred3, train_acc3], feed_dict={self.B_VGG_instance.conv10: conv10_out,
-                                                                                    self.label_placeholder: test_label_batch,
-                                                                                    self.training_flag: False})
-                #print('Exit from branch 2 !!!')
-                exit3_num += 1
-                if test_acc3 == 1:#np.argmax(exit2_pred, -1)[0] == test_label_batch[-1]:
-                    #print('correct')
-                    exit3_crrect += 1
-                infer_time = time.time() - infer_start
-                self.inference_time['exit%d'%(3)].append(infer_time)
-
-            total_correct = sum([exit0_crrect, exit1_crrect, exit2_crrect,exit3_crrect])
-            print("exit: {}".format(tp))
-            print('Overall accuracy: {} ({} / {})'.format(total_correct / len(val_label), total_correct, len(val_label)))
-            print('exit 0:{} | exit 1:{} | exit 2:{}| exit 3:{}'.format(exit0_num,exit1_num,exit2_num,exit3_num))
-            print("inference time: {}".format(infer_time))
-            strWriter = strWriter + " "+ str(total_correct / len(val_label))
-            exit0_crrect = 0
-            exit1_crrect = 0
-            exit2_crrect = 0
-            exit3_crrect = 0
-            total_correct = 0
-
-        fileWriter(strWriter+ " " + str(datetime.datetime.now())+"\n",0)
-        # June 111
-        tmp_arr = list(map(float,(strWriter.split())))
-        #if (tmp_arr[0]<tmp_arr[1]) and (tmp_arr[1]<tmp_arr[2]) and (tmp_arr[2]<tmp_arr[3]):
-        #    val = os.system('python auto.py &')
-            #os._exit(0)
-
-
-        print('Accuracy for each exit: {}% | {}% | {}%'.format(exit0_crrect / exit0_num, exit1_crrect / exit1_num, exit2_crrect / exit2_num))
-        print('Early exit percentage: {}% | {}% | {}%'.format(100.0 * len(self.inference_time['exit0'])/10000,
-                                                                100.0 * len(self.inference_time['exit1'])/10000,
-                                                                100.0 * len(self.inference_time['exit2'])/10000))
-        #write_pickle(self.inference_time, 'inference_record.pickle')
-
-        # save pb
-        #output_graph_def = graph_util.convert_variables_to_constants(sess, sess.graph_def, output_node_names=['pred_exit0', 'pred_exit1', 'pred_exit2'])
-        #with tf.gfile.FastGFile('bp_model/cxq_test.pb', mode='wb') as f:
-        #    f.write(output_graph_def.SerializeToString())
+        print('Accuracy for coarse, fine1, fine2, fine3: {}% | {}% | {}% | {}%'.format(coarse_crrect/coarse_num, fine1_crrect / fine1_num, fine2_crrect / fine2_num, fine3_crrect / fine3_num))
+        print('Overall accuracy: {} )'.format(sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)))
 
         sess.close()
-        return [exit0_crrect / exit0_num, exit1_crrect / exit1_num, exit2_crrect / exit2_num]
+        #overall accuracy
+        return sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)
 
     def _entropy_cal(self, x):
         ''' Function to calculate entropy as exit condition
