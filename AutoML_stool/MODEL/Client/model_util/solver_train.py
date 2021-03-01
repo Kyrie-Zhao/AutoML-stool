@@ -50,7 +50,7 @@ class Solver_Train(object):
         self.test_batch_size = 1
         self.lr = 0.001
         self.momentum = 0.9
-        self.epochs = 40
+        self.epochs = 10 * (MAX_SIZE/self.train_batch_size*7)
         self.baseline_epoch = 30
         self.train_step = None
         self.test_step = None
@@ -119,7 +119,7 @@ class Solver_Train(object):
     def train_coarse(self):
 
         ds_train_0, ds_train_1, ds_train_2, ds_train_3, ds_train_4, ds_train_5, ds_train_6 = self.load_data_train()
-        for epoch in range(1, self.epochs + 1):
+        for epoch in range(1, self.epochs + 1): # self.epochs = 10 * (MAX_SIZE/2)
             # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
             X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_train_0))
             X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_train_1))
@@ -148,12 +148,11 @@ class Solver_Train(object):
             X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_train_6))
             
             X_train_f0  = tf.concat((X_train_0, X_train_1), 0)
-            y_bc_train_f0 = tf.concat((y_bc_train_0, y_bc_train_1), 0)
+            y_bc_train_f0 = tf.concat((y_bc_train_0, y_bc_train_1), 0) # 0, 1
             X_train_f1  = tf.concat((X_train_2, X_train_3, X_train_4), 0)
-            y_bc_train_f1 = tf.concat((y_bc_train_2, y_bc_train_3, y_bc_train_4), 0)
+            y_bc_train_f1 = tf.concat((y_bc_train_2, y_bc_train_3, y_bc_train_4), 0) # 0, 1, 2
             X_train_f2  = tf.concat((X_train_5, X_train_6), 0)
-            y_bc_train_f2 = tf.concat((y_bc_train_5, y_bc_train_6), 0)
-            
+            y_bc_train_f2 = tf.concat((y_bc_train_5, y_bc_train_6), 0) # 0, 1
     
     def test(self):
         ds_test = self.load_data_test()
