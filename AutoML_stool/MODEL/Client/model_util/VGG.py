@@ -1,4 +1,4 @@
-from layers import *
+from MODEL.Client.model_util.layers import *
 import tensorflow as tf
 import numpy as np
 import copy

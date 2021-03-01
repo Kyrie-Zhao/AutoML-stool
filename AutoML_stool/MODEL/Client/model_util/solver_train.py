@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 import tensorflow as tf
-# tf.enable_eager_execution()
+tf.enable_eager_execution()
 from tensorflow.python.framework import graph_util
 from tensorflow.python.platform import gfile
 import tensorflow.contrib.eager as tfe
@@ -26,12 +26,14 @@ from MODEL.Client.model_util.loss import *
 from MODEL.Client.model_util.misc import progress_bar
 from MODEL.Client.model_util.augementation import *
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 #from AlexNet import B_AlexNet
 #config = tf.compat.v1.ConfigProto()
 #config.gpu_options.allow_growth = True
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 #tf.device('/gpu:0')
+
+
+MAX_SIZE = 1299
 
 class Solver_Train(object):
 
@@ -56,7 +58,6 @@ class Solver_Train(object):
         self.checkpoint_path = "./model_checkpoints"
         self.auto_earlyexit_lossweights = [0.03810899993000662, 0.017216535550954308, 0.05113813155702535, 0.022274152735761877]
         print(self.auto_earlyexit_lossweights)
-        # Dataloader (if implemented)
 
         self.train_branch_acc = {}
         self.test_branch_acc = {}
@@ -78,8 +79,31 @@ class Solver_Train(object):
         image = tf.io.read_file(directory +'/' +image_file)
         image = tf.image.decode_png(image, channels=3)
         return image, labels_b, labels_c, labels_bc
+ 
+    def load_data_fine_helper(self, df, bristol):
+        index_bristol = df.loc[:, 'bristol_type']==bristol
+        paths_file = df.loc[index_bristol, 'image_id'].values
+        labels_b = df.loc[index_bristol, 'bristol_type'].values
+        labels_c = df.loc[index_bristol, 'condition'].values
+        labels_bc = df.loc[index_bristol, 'brsitol_on_condition'].values
+        ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_b, labels_c, labels_bc)).repeat(-1)
+        ds = ds.map(self.read_image).map(self.augment).batch(self.train_batch_size // 7)
+        return ds
     
-    def load_data(self, is_train=True):
+    def load_data_fine(self):
+        directory = self.data_root
+        df = pd.read_csv(os.path.join(directory, 'train_a_b_annotation.csv'))
+        max_size = max(df.loc[:, 'bristol_type'].value_counts())
+        ds_0 = self.load_data_fine_helper(df, 0)
+        ds_1 = self.load_data_fine_helper(df, 1)
+        ds_2 = self.load_data_fine_helper(df, 2)
+        ds_3 = self.load_data_fine_helper(df, 3)
+        ds_4 = self.load_data_fine_helper(df, 4)
+        ds_5 = self.load_data_fine_helper(df, 5)
+        ds_6 = self.load_data_fine_helper(df, 6)
+        return ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6
+    
+    def load_data_coarse(self, is_train=True):
         directory = self.data_root
         if is_train:
             df = pd.read_csv(os.path.join(directory, 'train_a_b_annotation.csv'))
@@ -97,12 +121,46 @@ class Solver_Train(object):
             ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size) 
         return ds
     
-    # 1. 20 e, VGG-16, coarse, VGG-5, 
-    # 2. 20 e, VGG-5, fine 0, conditon=0, VGG-5. if < 5, coarse lock. if > 5, VGG-7
-    # 3. 20 e, VGG-5, fine 1, conditon=1, VGG-5. 
-    # 4. 20 e, VGG-5, fine 2, conditon=2, VGG-5. 
-    
     def train_coarse(self):
+        ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6 = self.load_data_fine()
+        for epoch in range(1, self.epochs + 1):
+            # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
+            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_0))
+            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_1))
+            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_2))
+            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_3))
+            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_4))
+            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_5))
+            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_6))
+            
+            X_train = tf.concat((X_train_0, X_train_1, X_train_2, X_train_3, 
+                                 X_train_4, X_train_5, X_train_6), 0)
+            y_c_train = tf.concat((y_c_train_0, y_c_train_1, y_c_train_2, y_c_train_3, 
+                                   y_c_train_4, y_c_train_5, y_c_train_6), 0)
+            
+    def train_fine(self):
+        
+        ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6 = self.load_data_fine()
+        for epoch in range(1, self.epochs + 1):
+            # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
+            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_0))
+            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_1))
+            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_2))
+            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_3))
+            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_4))
+            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_5))
+            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_6))
+            
+            X_train_f0  = tf.concat((X_train_0, X_train_1), 0)
+            y_bc_train_f0 = tf.concat((y_bc_train_0, y_bc_train_1), 0)
+            X_train_f1  = tf.concat((X_train_2, X_train_3, X_train_4), 0)
+            y_bc_train_f1 = tf.concat((y_bc_train_2, y_bc_train_3, y_bc_train_4), 0)
+            X_train_f2  = tf.concat((X_train_5, X_train_6), 0)
+            y_bc_train_f2 = tf.concat((y_bc_train_5, y_bc_train_6), 0)
+
+    
+    
+    def train(self):
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32, 
                                               shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
@@ -118,8 +176,8 @@ class Solver_Train(object):
 
         # create model and build graph
         self.B_VGG_instance = B_VGGNet(num_class=self.num_class, position=self.position)
-        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder,
-                                                                                             is_train=self.training_flag)
+        [logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder, # 2 F1
+                                                                               is_train=self.training_flag)
         print('VGG DONE')
         # prediction from branches
         pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
@@ -196,6 +254,7 @@ class Solver_Train(object):
                     print('Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_error0, train_error1, train_error2, train_error3))
                     progress_bar(train_step_num, self.train_step)
                 else:
+                    # 2 images (0, 1) vgg-1
                     _, train_loss, train_error0, train_error1, train_error2, train_error3 = \
                     sess.run([train_op, total_loss, train_acc0, train_acc1, train_acc2, train_acc3], \
                              feed_dict={self.img_placeholder: train_data_batch,
