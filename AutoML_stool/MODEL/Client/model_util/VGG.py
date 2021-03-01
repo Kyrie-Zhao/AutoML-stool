@@ -1,4 +1,4 @@
-from model_util.layers import *
+from MODEL.Client.model_util.layers import *
 import tensorflow as tf
 import numpy as np
 
@@ -7,7 +7,7 @@ sigma = 0.1
 
 class B_VGGNet(object):
 
-    def __init__(self, num_class=10,position=[0,0,0,0]):
+    def __init__(self, num_class=10, position=[0, 0, 0, 0]):
         self.num_class = num_class
         self.position = position
         self.conv1 = None
@@ -27,9 +27,12 @@ class B_VGGNet(object):
         self.conv11 = None
         self.conv12 = None
         self.conv13 = None
-        self.convertPosition = [self.conv1,self.conv2,self.max_pool1,self.conv3,self.conv4,self.max_pool2,self.conv5,self.conv6,self.conv7,self.max_pool3,self.conv8,self.conv9,self.conv10,self.max_pool4,self.conv11,self.conv12,self.conv13]
-
-
+        self.convertPosition = [self.conv1, self.conv2, self.max_pool1, 
+                                self.conv3, self.conv4, self.max_pool2, 
+                                self.conv5, self.conv6, self.conv7, self.max_pool3, 
+                                self.conv8, self.conv9, self.conv10, self.max_pool4, 
+                                self.conv11, self.conv12, self.conv13]
+        
     def model(self, x, is_train):
         # conv layer 1
         with tf.variable_scope("baseline"):
@@ -99,9 +102,7 @@ class B_VGGNet(object):
             logits_coarse = fc_layer(self.coarse, self.num_class,name='logits_coarse')
 
         with tf.variable_scope("fine_1"):
-
             self.fine_1 = max_pooling(self.convertPosition[self.position[1]], k_size=2, stride=2,name='maxpool1')
-
             self.fine_1 = Flatten(self.fine_1)
             self.fine_1 = fc_layer(self.fine_1, 4096,name='fc1')
             self.fine_1 = Relu(self.fine_1,name='fc1_relu')
@@ -109,9 +110,7 @@ class B_VGGNet(object):
             logits_fine_1= fc_layer(self.fine_1, self.num_class,name='logits_fine_1')
 
         with tf.variable_scope("fine_2"):
-
             self.fine_2 = max_pooling(self.convertPosition[self.position[2]], k_size=2, stride=2,name='maxpool1')
-
             self.fine_2 = Flatten(self.fine_2)
             self.fine_2 = fc_layer(self.fine_2, 4096,name='fc1')
             self.fine_2 = Relu(self.fine_2,name='fc1_relu')
@@ -119,13 +118,10 @@ class B_VGGNet(object):
             logits_fine_2 = fc_layer(self.fine_2, self.num_class,name='logits_fine_2')
 
         with tf.variable_scope("fine_3"):
-
             self.fine_3 = max_pooling(self.convertPosition[self.position[3]], k_size=2, stride=2,name='maxpool1')
-
             self.fine_3 = Flatten(self.fine_3)
             self.fine_3 = fc_layer(self.fine_3, 4096,name='fc1')
             self.fine_3 = Relu(self.fine_3,name='fc1_relu')
             self.fine_3 = Drop_out(self.fine_3, 0.2, training=is_train)
             logits_fine_2 = fc_layer(self.fine_3, self.num_class,name='logits_fine_3')
-
         return [logits_coarse, logits_fine_1, logits_fine_2, logits_fine_3]

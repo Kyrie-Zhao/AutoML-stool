@@ -1,21 +1,30 @@
 import os
-import time
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import warnings
+warnings.filterwarnings('ignore')
+
 import numpy as np
+import pandas as pd
+
+import tensorflow as tf
+# tf.enable_eager_execution()
+from tensorflow.python.framework import graph_util
+from tensorflow.python.platform import gfile
+import tensorflow.contrib.eager as tfe
+
+import time
+
 import argparse
 import random
 import string
 import datetime
-import tensorflow.compat.v1 as tf
 import cv2
-tf.disable_v2_behavior()
-from tensorflow.python.framework import graph_util
-from tensorflow.python.platform import gfile
 
-from VGG import B_VGGNet
-from loss import *
-from utils import read_all_batches, read_val_data, write_pickle,fileWriter
-from misc import progress_bar
-from augementation import *
+from MODEL.Client.model_util.VGG import B_VGGNet
+from MODEL.Client.model_util.loss import *
+# from MODEL.Client.model_util.utils import read_all_batches, read_val_data, write_pickle, fileWriter
+from MODEL.Client.model_util.misc import progress_bar
+from MODEL.Client.model_util.augementation import *
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 #from AlexNet import B_AlexNet
@@ -26,15 +35,17 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 class Solver_Train(object):
 
-    def __init__(self,position):
-        self.data_root = './data/cifar-10-python/cifar-10-batches-py'
-        self.num_class = 10
-        self.input_w = 32
-        self.input_h = 32
+    def __init__(self, position=[0, 0, 0, 0]):
+        #self.data_root = './data/cifar-10-python/cifar-10-batches-py'
+        self.position = position
+        self.data_root = './dataset_v4'
+        self.num_class = 3
+        self.input_w = 256
+        self.input_h = 256
         self.input_c = 3
         # Training parameter
         self.position = position
-        self.train_batch_size = 250
+        self.train_batch_size = 14
         self.test_batch_size = 1
         self.lr = 0.001
         self.momentum = 0.9
@@ -58,26 +69,49 @@ class Solver_Train(object):
             self.train_branch_acc['exit%d'%(i)] = []
             self.test_branch_acc['exit%d'%(i)] = []
 
-
-    def load_data(self):
-        train_data, train_label = read_all_batches(self.data_root, 5, [self.input_w, self.input_h, self.input_c])
-        self.train_step = len(train_data) // self.train_batch_size
-        val_data, val_label = read_val_data(self.data_root, [self.input_w, self.input_h, self.input_c], shuffle=False)
-        self.test_step = len(val_data) // self.test_batch_size
-        return (train_data, train_label), (val_data, val_label)
-
+    def augment(self, image, label):
+        image = tf.image.resize_images(image, size=[self.input_w, self.input_h])
+        return image, label
+    
+    def read_image(self, image_file, label):
+        directory = self.data_root
+        image = tf.io.read_file(directory +'/' +image_file)
+        image = tf.image.decode_png(image, channels=3)
+        return image, label
+    
+    def load_data(self, is_train=True):
+        directory = self.data_root
+        if is_train:
+            df = pd.read_csv(os.path.join(directory, 'train_a_b_annotation.csv'))
+        else:
+            df = pd.read_csv(os.path.join(directory, 'test_a_annotation.csv'))
+        paths_file = df.loc[:, 'image_id'].values
+        labels_bristol = df.loc[:, 'bristol_type'].values
+        ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_bristol))
+        if is_train:
+            ds = ds.map(self.read_image).map(self.augment).batch(self.train_batch_size) 
+        else:
+            ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size) 
+        return ds
 
     def train(self):
         # create placeholder
-        self.img_placeholder = tf.placeholder(dtype=tf.float32, shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c], name='image_placeholder')
-        self.label_placeholder = tf.placeholder(dtype=tf.int32, shape=[self.train_batch_size], name='label_placeholder')
+        self.img_placeholder = tf.placeholder(dtype=tf.float32, 
+                                              shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
+                                              name='image_placeholder')
+        self.label_placeholder = tf.placeholder(dtype=tf.int32, 
+                                                shape=[self.train_batch_size], 
+                                                name='label_placeholder')
         self.training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
-        self.earlyexit_lossweights_placeholder = tf.placeholder(dtype=tf.float32, shape=[len(self.earlyexit_lossweights)], name='earlyexit_lossweights_placeholder')
+        self.earlyexit_lossweights_placeholder = tf.placeholder(dtype=tf.float32, 
+                                                                shape=[len(self.earlyexit_lossweights)],
+                                                                name='earlyexit_lossweights_placeholder')
         #self.lr_placeholder = tf.placeholder(dtype=tf.float32, shape=[])
 
         # create model and build graph
-        self.B_VGG_instance = B_VGGNet(num_class=self.num_class,position=self.position)
-        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder, is_train=self.training_flag)
+        self.B_VGG_instance = B_VGGNet(num_class=self.num_class, position=self.position)
+        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder,
+                                                                                             is_train=self.training_flag)
 
         # prediction from branches
         pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
@@ -91,7 +125,8 @@ class Solver_Train(object):
         loss_exit1 = cross_entropy(logits_exit1, self.label_placeholder)
         loss_exit2 = cross_entropy(logits_exit2, self.label_placeholder)
         loss_exit3 = cross_entropy(logits_exit3, self.label_placeholder)
-        total_loss = tf.reduce_sum(tf.multiply(self.earlyexit_lossweights_placeholder, [loss_exit0, loss_exit1, loss_exit2, loss_exit3]))
+        total_loss = tf.reduce_sum(tf.multiply(self.earlyexit_lossweights_placeholder, 
+                                               [loss_exit0, loss_exit1, loss_exit2, loss_exit3]))
 
         opt_exit2 = tf.train.AdamOptimizer(learning_rate=self.lr, beta1=0.9, beta2=0.999, epsilon=1e-8)
         #opt = tf.train.MomentumOptimizer(learning_rate=self.lr, momentum=self.momentum)
@@ -106,7 +141,6 @@ class Solver_Train(object):
 
         for var in tf.trainable_variables():
             print(var.name, var.get_shape())
-
 
         # load all data in memory
         (train_data, train_label), _ = self.load_data()
@@ -139,71 +173,65 @@ class Solver_Train(object):
             val_error_list = []
 
             if epoch == (self.baseline_epoch+1):
-
                 self.earlyexit_lossweights = self.auto_earlyexit_lossweights
                 print('\n'+' Baseline trained '.center(50, '-'))
                 print('Earlyexit loss weights update: {} '.format(self.earlyexit_lossweights))
                 print('-'.center(50, '-'))
             print("\n===> epoch: %d/%d" %(epoch, self.epochs))
-
-            for train_step_num in range(1, self.train_step+1):
-                # load a batch of train data
-                train_data_batch, train_label_batch = self._get_augment_train_batch(train_data, train_label, self.train_batch_size)
+            
+            ds_train = self.load_data(is_train=True)
+            for train_data_batch, train_label_batch in tfe.Iterator(ds_train):
                 if epoch > self.baseline_epoch:
-                    _, train_loss, exit0_loss, exit1_loss, exit2_loss, exit3_loss, train_error0, train_error1, train_error2,train_error3 = sess.run([train_op, total_loss, loss_exit0, loss_exit1, loss_exit2, loss_exit3, train_acc0, train_acc1, train_acc2, train_acc3],
-                                                                                                                            feed_dict={
-                                                                                                                                self.img_placeholder: train_data_batch,
-                                                                                                                                self.label_placeholder: train_label_batch,
-                                                                                                                                self.earlyexit_lossweights_placeholder: self.earlyexit_lossweights,
-                                                                                                                                self.training_flag: True
-                                                                                                                            })
+                    _, train_loss, exit0_loss, exit1_loss, exit2_loss, exit3_loss, \
+                    train_error0, train_error1, train_error2, train_error3 = \
+                    sess.run([train_op, total_loss, loss_exit0, loss_exit1, loss_exit2, loss_exit3, 
+                              train_acc0, train_acc1, train_acc2, train_acc3], 
+                             feed_dict={self.img_placeholder: train_data_batch, 
+                                        self.label_placeholder: train_label_batch,
+                                        self.earlyexit_lossweights_placeholder: self.earlyexit_lossweights,
+                                        self.training_flag: True})
                     train_error_list.append([train_error0, train_error1, train_error2, train_error3])
                     branch_loss_list.append([exit0_loss, exit1_loss, exit2_loss, exit3_loss])
                     total_loss_list.append(train_loss)
                     format_msg = 'Loss: {:.4f} | Top1 Acc: {:.4f} | {:.4f} | {:.4f} |{:.4f} '.format(train_loss, train_error0, train_error1, train_error2, train_error3)
                     progress_bar(train_step_num, self.train_step, format_msg)
-
                 else:
-                    _, train_loss, train_error0, train_error1, train_error2, train_error3 = sess.run([train_op, total_loss, train_acc0, train_acc1, train_acc2, train_acc3],
-                                                                                        feed_dict={
-                                                                                            self.img_placeholder: train_data_batch,
-                                                                                            self.label_placeholder: train_label_batch,
-                                                                                            self.earlyexit_lossweights_placeholder: self.earlyexit_lossweights,
-                                                                                            self.training_flag: True
-                                                                                        })
+                    _, train_loss, train_error0, train_error1, train_error2, train_error3 = \
+                    sess.run([train_op, total_loss, train_acc0, train_acc1, train_acc2, train_acc3], \
+                             feed_dict={self.img_placeholder: train_data_batch,
+                                        self.label_placeholder: train_label_batch,       
+                                        self.earlyexit_lossweights_placeholder: self.earlyexit_lossweights,
+                                        self.training_flag: True})
                     train_error_list.append([train_error0, train_error1, train_error2, train_error3])
                     total_loss_list.append(train_loss)
                     format_msg = 'Loss: {:.4f} | Top1 Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_loss, train_error0, train_error1, train_error2, train_error3)
                     progress_bar(train_step_num, self.train_step, format_msg)
 
             train_error_array = np.array(train_error_list)
-            print('Average loss: {:.4f} | average train epoch accuracy: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(sum(total_loss_list) / len(total_loss_list),
-                                                                                                        np.mean(train_error_array[:, 0]),
-                                                                                                        np.mean(train_error_array[:, 1]),
-                                                                                                        np.mean(train_error_array[:, 2]),
-                                                                                                        np.mean(train_error_array[:, 3])))
+            print('Average loss: {:.4f} | average train epoch accuracy: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(sum(total_loss_list) / len(total_loss_list), np.mean(train_error_array[:, 0]), np.mean(train_error_array[:, 1]), np.mean(train_error_array[:, 2]), np.mean(train_error_array[:, 3])))
             print("TRAIN END")
 
         save_path = saver.save(sess, os.path.join(self.checkpoint_path, 'B_VGG.ckpt'))
-
-
         sess.close()
-
-
 
     def test(self,action):
 
         # create placeholder
-        self.img_placeholder = tf.placeholder(dtype=tf.float32, shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c], name='image_placeholder')
-        self.label_placeholder = tf.placeholder(dtype=tf.int32, shape=[self.test_batch_size], name='label_placeholder')
+        self.img_placeholder = tf.placeholder(dtype=tf.float32, 
+                                              shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c],
+                                              name='image_placeholder')
+        self.label_placeholder = tf.placeholder(dtype=tf.int32, 
+                                                shape=[self.test_batch_size], 
+                                                name='label_placeholder')
         self.training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
-        self.earlyexit_lossweights_placeholder = tf.placeholder(dtype=tf.float32, shape=[len(self.earlyexit_lossweights)], name='earlyexit_lossweights_placeholder')
-        #self.lr_placeholder = tf.placeholder(dtype=tf.float32, shape=[])
+        self.earlyexit_lossweights_placeholder = tf.placeholder(dtype=tf.float32, 
+                                                                shape=[len(self.earlyexit_lossweights)],
+                                                                name='earlyexit_lossweights_placeholder')
 
         # create model and build graph
         self.B_VGG_instance = B_VGGNet(num_class=self.num_class)
-        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder, is_train=self.training_flag)
-
+        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder,
+                                                                                             is_train=self.training_flag)
 
         # prediction from branches
         pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
@@ -242,16 +270,26 @@ class Solver_Train(object):
         acc_arrary = []
 
         #Action
-        convertPosition = [self.B_VGG_instance.conv1,self.B_VGG_instance.conv2,self.B_VGG_instance.max_pool1,self.B_VGG_instance.conv3,self.B_VGG_instance.conv4,self.B_VGG_instance.max_pool2,self.B_VGG_instance.conv5,self.B_VGG_instance.conv6,self.B_VGG_instance.conv7,self.B_VGG_instance.max_pool3,self.B_VGG_instance.conv8,self.B_VGG_instance.conv9,self.B_VGG_instance.conv10,self.B_VGG_instance.max_pool4,self.B_VGG_instance.conv11,self.B_VGG_instance.conv12,self.B_VGG_instance.conv13]
+        convertPosition=[self.B_VGG_instance.conv1, self.B_VGG_instance.conv2, self.B_VGG_instance.max_pool1,
+                         self.B_VGG_instance.conv3, self.B_VGG_instance.conv4, self.B_VGG_instance.max_pool2,
+                         self.B_VGG_instance.conv5, self.B_VGG_instance.conv6, self.B_VGG_instance.conv7,
+                         self.B_VGG_instance.max_pool3, self.B_VGG_instance.conv8, self.B_VGG_instance.conv9,
+                         self.B_VGG_instance.conv10, self.B_VGG_instance.max_pool4, self.B_VGG_instance.conv11,
+                         self.B_VGG_instance.conv12, self.B_VGG_instance.conv13]
         action_coarse = action[0]
         action_fine_1 = action[1]
         action_fine_2 = action[2]
         action_fine_3 = action[3]
 
-        for test_step_num in range(self.test_step):
-            #get dataset
-            test_data_batch, test_label_batch = self._get_val_batch(val_data, val_label, self.test_batch_size)
-            coarse_point, fine_1_point,fine_2_point,fine_3_point,exit0_pred, test_acc0 = sess.run([convertPosition[action[0]], convertPosition[action[1]]，convertPosition[action[2]]，convertPosition[action[3]]，pred0, train_acc0], feed_dict={self.img_placeholder: test_data_batch,self.label_placeholder: test_label_batch,self.training_flag: False})
+        ds_test = self.load_data(is_train=False)
+        for test_data_batch, test_label_batch in tfe.Iterator(ds_test):
+            coarse_point, fine_1_point, fine_2_point, fine_3_point, \
+            exit0_pred, test_acc0 = sess.run([convertPosition[action[0]], convertPosition[action[1]], 
+                                              convertPosition[action[2]], convertPosition[action[3]],
+                                              pred0, train_acc0],
+                                             feed_dict={self.img_placeholder: test_data_batch, 
+                                                        self.label_placeholder: test_label_batch,
+                                                        self.training_flag: False})
             coarse_num+=1
             if (test_acc0 == 1):
                 coarse_crrect+=1
@@ -259,25 +297,43 @@ class Solver_Train(object):
             if(np.argmax(exit0_pred)==0):
                 fine1_num += 1
                 if(action_coarse>=action_fine_1):
-                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1], feed_dict={convertPosition[action[1]]: fine_1_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1], 
+                                                     feed_dict={convertPosition[action[1]]: fine_1_point, 
+                                                                self.label_placeholder: test_label_batch, 
+                                                                self.training_flag: False})
                 else:
-                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit1_pred, test_acc1 = sess.run([pred1, train_acc1],
+                                                     feed_dict={convertPosition[action[0]]: coarse_point,
+                                                                self.label_placeholder: test_label_batch,
+                                                                self.training_flag: False})
                 if (test_acc1 == 1):
                     fine1_crrect += 1
             elif(np.argmax(exit0_pred)==1):
                 fine2_num += 1
                 if(action_coarse>=action_fine_1):
-                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], feed_dict={convertPosition[action[2]]: fine_2_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], 
+                                                     feed_dict={convertPosition[action[2]]: fine_2_point,
+                                                                self.label_placeholder: test_label_batch,
+                                                                self.training_flag: False})
                 else:
-                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit2_pred, test_acc2 = sess.run([pred2, train_acc2], 
+                                                     feed_dict={convertPosition[action[0]]: coarse_point,
+                                                                self.label_placeholder: test_label_batch,
+                                                                self.training_flag: False})
                 if (test_acc2 == 1):
                     fine2_crrect += 1
             elif(np.argmax(exit0_pred)==2):
                 fine3_num += 1
                 if(action_coarse>=action_fine_1):
-                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], feed_dict={convertPosition[action[3]]: fine_3_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], 
+                                                     feed_dict={convertPosition[action[3]]: fine_3_point,
+                                                                self.label_placeholder: test_label_batch,
+                                                                self.training_flag: False})
                 else:
-                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], feed_dict={convertPosition[action[0]]: coarse_point,self.label_placeholder: test_label_batch,self.training_flag: False})
+                    exit3_pred, test_acc3 = sess.run([pred3, train_acc3], 
+                                                     feed_dict={convertPosition[action[0]]: coarse_point,
+                                                                self.label_placeholder: test_label_batch,
+                                                                self.training_flag: False})
                 if (test_acc3 == 1):
                     fine3_crrect += 1
 
@@ -294,95 +350,21 @@ class Solver_Train(object):
         #print(x)
         return np.abs(np.sum(x * np.log(x+1e-10)))
 
-    '''
-    def run(self):
-        self.train()
-    '''
-
-
-    def _get_val_batch(self, vali_data, vali_label, vali_batch_size):
-        '''
-        If you want to use a random batch of validation data to validate instead of using the
-        whole validation data, this function helps you generate that batch
-        :param vali_data: 4D numpy array
-        :param vali_label: 1D numpy array
-        :param vali_batch_size: int
-        :return: 4D numpy array and 1D numpy array
-        '''
-        offset = np.random.choice(10000 - vali_batch_size, 1)[0]
-        vali_data_batch = vali_data[offset:offset+vali_batch_size, ...]
-        vali_data_batch = whitening_image(vali_data_batch)
-        vali_label_batch = vali_label[offset:offset+vali_batch_size]
-        return vali_data_batch, vali_label_batch
-
-
-    def _get_augment_train_batch(self, train_data, train_labels, train_batch_size):
-        '''
-        This function helps generate a batch of train data, and random crop, horizontally flip
-        and whiten them at the same time
-        :param train_data: 4D numpy array
-        :param train_labels: 1D numpy array
-        :param train_batch_size: int
-        :return: augmented train batch data and labels. 4D numpy array and 1D numpy array
-        '''
-        offset = np.random.choice(10000 - train_batch_size, 1)[0]
-
-        batch_data = train_data[offset:offset+train_batch_size, ...]
-        batch_data = random_crop_and_flip(batch_data, padding_size=2)
-        batch_data = whitening_image(batch_data)
-        batch_label = train_labels[offset:offset+self.train_batch_size]
-
-        return batch_data, batch_label
-
-
+   
 def main():
-
 
     parser = argparse.ArgumentParser(description='Branchy_AlexNet with CIFAR-10')
     # Training parameters
-    parser.add_argument('--dataset', default='cifar10', type=str, help='Dataset used')
     parser.add_argument('--phase', default='train', type=str, help='Train model or test')
-    parser.add_argument('--epochs', default=60, type=int, metavar='N', help='number of total epochs to run')
-    parser.add_argument('--baseline_epoch', default=40, type=int, metavar='N', help='number of epochs to train baseline')
-    parser.add_argument('--trainBatchSize', default=250, type=int, help='training batch size')
-    parser.add_argument('--testBatchSize', default=1, type=int, help='testing batch size')
-    parser.add_argument('--learning_rate', '--learning-rate', default=0.001, type=float, metavar='LR', help='initial learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='LR', help='initial learning rate')
-    parser.add_argument('--checkpoint_path', default='./model_checkpoints', type=str, help='Dataset used')
-
-    # Network or loss parameters
-    parser.add_argument('--auto_earlyexit_lossweights', type=float, nargs='*', dest='auto_earlyexit_lossweights',
-                    default=[0.03810899993000662, 0.017216535550954308, 0.05113813155702535, 0.022274152735761877], help='List of loss weights for early exits (e.g. --lossweights 0.1 0.3)')
-    parser.add_argument('--earlyexit_lossweights', type=float, nargs='*', dest='earlyexit_lossweights',
-                    default=[0.0, 0.0, 0.0, 1.0], help='List of loss weights for early exits (e.g. --lossweights 0.1 0.3)')
-    parser.add_argument('--earlyexit_thresholds', type=float, nargs='*', dest='earlyexit_thresholds',
-                    default=[0,0,10], help='List of EarlyExit thresholds (e.g. --earlyexit 1.2 0.9)')
-    #parser.add_argument('--cuda', default=torch.cuda.is_available(), type=bool, help='whether cuda is in use')
+    parser.add_argument('--cuda', default='0', type=str, help='CUDA Visible devices',)
     args = parser.parse_args()
-
-    solver = Solver_Train(args)
-
+    solver = Solver_Train()
     if args.phase == 'train':
         solver.train()
         print("END train")
-        #val = os.system('python solver.py --phase test &')
     elif args.phase == 'test':
         solver.test()
-        #solver.test()
         print("END test")
-        a = random.uniform(0.01,0.3);
-        b = random.uniform(0.01,0.3);
-        c = random.uniform(0.01,0.3);
-        d = random.uniform(0,0.5);
-        #fileWriter(str(a)+" " +str(b)+" "+str(c)+" "+str(d) + " " + str(datetime.datetime.now())+"\n",1)
-        #val = os.system('python solver.py --auto_earlyexit_lossweights {} {} {} {} &'.format(a,b,c,d))
-        #val = os.system("python auto.py &")
-        print(str(a)+" " +str(b)+" "+str(c)+" "+str(d) )
-        #print("Exit {} time_average: {} acc: {}".format(i,time_average,acc))
-        #solver.test_June3()
-
-
-
 
 if __name__ == '__main__':
     main()

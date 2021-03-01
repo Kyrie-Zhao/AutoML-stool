@@ -32,7 +32,6 @@ class Solver(object):
             # 在与server交互的时候（ecrt）
             self.one_step()
 
-
     def conv_flops(self, k_size, c_in, c_out, h_out, w_out):
         return 2 * (k_size ** 2) * c_in * h_out * w_out * c_out
 
