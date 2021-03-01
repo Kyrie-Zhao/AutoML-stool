@@ -80,7 +80,7 @@ class Solver_Train(object):
         image = tf.image.decode_png(image, channels=3)
         return image, labels_b, labels_c, labels_bc
  
-    def load_data_fine_helper(self, df, bristol):
+    def load_data_train_helper(self, df, bristol):
         index_bristol = df.loc[:, 'bristol_type']==bristol
         paths_file = df.loc[index_bristol, 'image_id'].values
         labels_b = df.loc[index_bristol, 'bristol_type'].values
@@ -90,48 +90,44 @@ class Solver_Train(object):
         ds = ds.map(self.read_image).map(self.augment).batch(self.train_batch_size // 7)
         return ds
     
-    def load_data_fine(self):
+    def load_data_train(self):
         directory = self.data_root
         df = pd.read_csv(os.path.join(directory, 'train_a_b_annotation.csv'))
         max_size = max(df.loc[:, 'bristol_type'].value_counts())
-        ds_0 = self.load_data_fine_helper(df, 0)
-        ds_1 = self.load_data_fine_helper(df, 1)
-        ds_2 = self.load_data_fine_helper(df, 2)
-        ds_3 = self.load_data_fine_helper(df, 3)
-        ds_4 = self.load_data_fine_helper(df, 4)
-        ds_5 = self.load_data_fine_helper(df, 5)
-        ds_6 = self.load_data_fine_helper(df, 6)
+        ds_0 = self.load_data_train_helper(df, 0)
+        ds_1 = self.load_data_train_helper(df, 1)
+        ds_2 = self.load_data_train_helper(df, 2)
+        ds_3 = self.load_data_train_helper(df, 3)
+        ds_4 = self.load_data_train_helper(df, 4)
+        ds_5 = self.load_data_train_helper(df, 5)
+        ds_6 = self.load_data_train_helper(df, 6)
         return ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6
     
-    def load_data_coarse(self, is_train=True):
+    def load_data_test(self, test_baseline = 'a'):
         directory = self.data_root
-        if is_train:
-            df = pd.read_csv(os.path.join(directory, 'train_a_b_annotation.csv'))
-        else:
+        if test_baseline == 'a':
             df = pd.read_csv(os.path.join(directory, 'test_a_annotation.csv'))
+        else:
+            df = pd.read_csv(os.path.join(directory, 'test_b_annotation.csv'))
         paths_file = df.loc[:, 'image_id'].values
         labels_b = df.loc[:, 'bristol_type'].values
         labels_c = df.loc[:, 'condition'].values
         labels_bc = df.loc[:, 'brsitol_on_condition'].values
-        
         ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_b, labels_c, labels_bc))
-        if is_train:
-            ds = ds.map(self.read_image).map(self.augment).batch(self.train_batch_size) 
-        else:
-            ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size) 
+        ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size) 
         return ds
     
     def train_coarse(self):
-        ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6 = self.load_data_fine()
+        ds_train_0, ds_train_1, ds_train_2, ds_train_3, ds_train_4, ds_train_5, ds_train_6 = self.load_data_train()
         for epoch in range(1, self.epochs + 1):
             # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
-            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_0))
-            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_1))
-            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_2))
-            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_3))
-            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_4))
-            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_5))
-            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_6))
+            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_train_0))
+            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_train_1))
+            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_train_2))
+            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_train_3))
+            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_train_4))
+            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_train_5))
+            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_train_6))
             
             X_train = tf.concat((X_train_0, X_train_1, X_train_2, X_train_3, 
                                  X_train_4, X_train_5, X_train_6), 0)
@@ -140,16 +136,16 @@ class Solver_Train(object):
             
     def train_fine(self):
         
-        ds_0, ds_1, ds_2, ds_3, ds_4, ds_5, ds_6 = self.load_data_fine()
+        ds_train_0, ds_train_1, ds_train_2, ds_train_3, ds_train_4, ds_train_5, ds_train_6 = self.load_data_train()
         for epoch in range(1, self.epochs + 1):
             # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
-            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_0))
-            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_1))
-            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_2))
-            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_3))
-            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_4))
-            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_5))
-            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_6))
+            X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = next(iter(ds_train_0))
+            X_train_1, y_b_train_1, y_c_train_1, y_bc_train_1 = next(iter(ds_train_1))
+            X_train_2, y_b_train_2, y_c_train_2, y_bc_train_2 = next(iter(ds_train_2))
+            X_train_3, y_b_train_3, y_c_train_3, y_bc_train_3 = next(iter(ds_train_3))
+            X_train_4, y_b_train_4, y_c_train_4, y_bc_train_4 = next(iter(ds_train_4))
+            X_train_5, y_b_train_5, y_c_train_5, y_bc_train_5 = next(iter(ds_train_5))
+            X_train_6, y_b_train_6, y_c_train_6, y_bc_train_6 = next(iter(ds_train_6))
             
             X_train_f0  = tf.concat((X_train_0, X_train_1), 0)
             y_bc_train_f0 = tf.concat((y_bc_train_0, y_bc_train_1), 0)
@@ -157,8 +153,15 @@ class Solver_Train(object):
             y_bc_train_f1 = tf.concat((y_bc_train_2, y_bc_train_3, y_bc_train_4), 0)
             X_train_f2  = tf.concat((X_train_5, X_train_6), 0)
             y_bc_train_f2 = tf.concat((y_bc_train_5, y_bc_train_6), 0)
-
+            
     
+    def test(self):
+        ds_test = self.load_data_test()
+        
+        for X_test, y_b_test, y_c_test, y_bc_test in tfe.Iterator(ds_test):
+
+            pass
+            
     
     def train(self):
         # create placeholder
