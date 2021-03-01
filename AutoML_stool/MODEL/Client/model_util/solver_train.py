@@ -112,7 +112,7 @@ class Solver_Train(object):
         self.B_VGG_instance = B_VGGNet(num_class=self.num_class, position=self.position)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder,
                                                                                              is_train=self.training_flag)
-
+        print('VGG DONE')
         # prediction from branches
         pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
         pred1 = tf.nn.softmax(logits_exit1, name='pred_exit1')
@@ -127,23 +127,17 @@ class Solver_Train(object):
         loss_exit3 = cross_entropy(logits_exit3, self.label_placeholder)
         total_loss = tf.reduce_sum(tf.multiply(self.earlyexit_lossweights_placeholder, 
                                                [loss_exit0, loss_exit1, loss_exit2, loss_exit3]))
-
         opt_exit2 = tf.train.AdamOptimizer(learning_rate=self.lr, beta1=0.9, beta2=0.999, epsilon=1e-8)
         #opt = tf.train.MomentumOptimizer(learning_rate=self.lr, momentum=self.momentum)
         train_op = opt_exit2.minimize(total_loss)
-
         # accuracy from brach
         train_acc0 = top_k_error(pred0, self.label_placeholder, 1)
         train_acc1 = top_k_error(pred1, self.label_placeholder, 1)
         train_acc2 = top_k_error(pred2, self.label_placeholder, 1)
         train_acc3 = top_k_error(pred3, self.label_placeholder, 1)
 
-
         for var in tf.trainable_variables():
             print(var.name, var.get_shape())
-
-        # load all data in memory
-        (train_data, train_label), _ = self.load_data()
 
         # Initialize model and create session
         init = tf.initialize_all_variables()
@@ -153,7 +147,6 @@ class Solver_Train(object):
 
         # Construct saver
         saver = tf.train.Saver()
-
         # training record to save in pickle
         training_record = {
             'baseline_acc_record': [],
@@ -161,9 +154,7 @@ class Solver_Train(object):
             'branch_acc_record': [],
             'branch_loss_record': []
         }
-
         print(' Start Training '.center(50, '-'))
-
         for epoch in range(1, self.epochs + 1):
 
             step_list = []
@@ -193,8 +184,9 @@ class Solver_Train(object):
                     train_error_list.append([train_error0, train_error1, train_error2, train_error3])
                     branch_loss_list.append([exit0_loss, exit1_loss, exit2_loss, exit3_loss])
                     total_loss_list.append(train_loss)
-                    format_msg = 'Loss: {:.4f} | Top1 Acc: {:.4f} | {:.4f} | {:.4f} |{:.4f} '.format(train_loss, train_error0, train_error1, train_error2, train_error3)
-                    progress_bar(train_step_num, self.train_step, format_msg)
+                    print('Loss: {:.4f}'.format(train_loss))
+                    print('Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_error0, train_error1, train_error2, train_error3))
+                    progress_bar(train_step_num, self.train_step)
                 else:
                     _, train_loss, train_error0, train_error1, train_error2, train_error3 = \
                     sess.run([train_op, total_loss, train_acc0, train_acc1, train_acc2, train_acc3], \
@@ -204,11 +196,16 @@ class Solver_Train(object):
                                         self.training_flag: True})
                     train_error_list.append([train_error0, train_error1, train_error2, train_error3])
                     total_loss_list.append(train_loss)
-                    format_msg = 'Loss: {:.4f} | Top1 Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_loss, train_error0, train_error1, train_error2, train_error3)
-                    progress_bar(train_step_num, self.train_step, format_msg)
+                    print('Loss: {:.4f}'.format(train_loss))
+                    print('Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_error0, train_error1, train_error2, train_error3))
+                    progress_bar(train_step_num, self.train_step)
 
             train_error_array = np.array(train_error_list)
-            print('Average loss: {:.4f} | average train epoch accuracy: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(sum(total_loss_list) / len(total_loss_list), np.mean(train_error_array[:, 0]), np.mean(train_error_array[:, 1]), np.mean(train_error_array[:, 2]), np.mean(train_error_array[:, 3])))
+            print('Average loss: {:.4f}'.format(sum(total_loss_list) / len(total_loss_list))
+            print('Average training acc: {:.4f}| {:.4f} | {:.4f}| {:.4f}'.format(np.mean(train_error_array[:, 0]),
+                                                                                 np.mean(train_error_array[:, 1]),
+                                                                                 np.mean(train_error_array[:, 2]),
+                                                                                 np.mean(train_error_array[:, 3])))
             print("TRAIN END")
 
         save_path = saver.save(sess, os.path.join(self.checkpoint_path, 'B_VGG.ckpt'))
@@ -227,7 +224,6 @@ class Solver_Train(object):
         self.earlyexit_lossweights_placeholder = tf.placeholder(dtype=tf.float32, 
                                                                 shape=[len(self.earlyexit_lossweights)],
                                                                 name='earlyexit_lossweights_placeholder')
-
         # create model and build graph
         self.B_VGG_instance = B_VGGNet(num_class=self.num_class)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder,
@@ -240,7 +236,6 @@ class Solver_Train(object):
         pred3 = tf.nn.softmax(logits_exit3, name='pred_exit3')
 
         # logits of branches
-
         # accuracy from brach
         train_acc0 = top_k_error(pred0, self.label_placeholder, 1)
         train_acc1 = top_k_error(pred1, self.label_placeholder, 1)
@@ -337,19 +332,14 @@ class Solver_Train(object):
                 if (test_acc3 == 1):
                     fine3_crrect += 1
 
-        print('Accuracy for coarse, fine1, fine2, fine3: {}% | {}% | {}% | {}%'.format(coarse_crrect/coarse_num, fine1_crrect / fine1_num, fine2_crrect / fine2_num, fine3_crrect / fine3_num))
-        print('Overall accuracy: {} )'.format(sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)))
-
+        print('Accuracy for coarse, fine1, fine2, fine3: {}% | {}% | {}% | {}%'.format(coarse_crrect/coarse_num, 
+                                                                                       fine1_crrect / fine1_num, 
+                                                                                       fine2_crrect / fine2_num, 
+                                                                                       fine3_crrect / fine3_num))
+        print('Overall accuracy: {} )'.format(sum([fine1_crrect, fine2_crrect, fine3_crrect]) / len(val_label)))
         sess.close()
         #overall accuracy
         return sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)
-
-    def _entropy_cal(self, x):
-        ''' Function to calculate entropy as exit condition
-        '''
-        #print(x)
-        return np.abs(np.sum(x * np.log(x+1e-10)))
-
    
 def main():
 
