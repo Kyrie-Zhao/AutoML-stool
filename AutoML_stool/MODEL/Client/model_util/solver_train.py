@@ -69,15 +69,15 @@ class Solver_Train(object):
             self.train_branch_acc['exit%d'%(i)] = []
             self.test_branch_acc['exit%d'%(i)] = []
 
-    def augment(self, image, label):
+    def augment(self, image, labels_b, labels_c, labels_bc):
         image = tf.image.resize_images(image, size=[self.input_w, self.input_h])
-        return image, label
+        return image, labels_b, labels_c, labels_bc
     
-    def read_image(self, image_file, label):
+    def read_image(self, image_file, labels_b, labels_c, labels_bc):
         directory = self.data_root
         image = tf.io.read_file(directory +'/' +image_file)
         image = tf.image.decode_png(image, channels=3)
-        return image, label
+        return image, labels_b, labels_c, labels_bc
     
     def load_data(self, is_train=True):
         directory = self.data_root
@@ -86,15 +86,23 @@ class Solver_Train(object):
         else:
             df = pd.read_csv(os.path.join(directory, 'test_a_annotation.csv'))
         paths_file = df.loc[:, 'image_id'].values
-        labels_bristol = df.loc[:, 'bristol_type'].values
-        ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_bristol))
+        labels_b = df.loc[:, 'bristol_type'].values
+        labels_c = df.loc[:, 'condition'].values
+        labels_bc = df.loc[:, 'brsitol_on_condition'].values
+        
+        ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_b, labels_c, labels_bc))
         if is_train:
             ds = ds.map(self.read_image).map(self.augment).batch(self.train_batch_size) 
         else:
             ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size) 
         return ds
-
-    def train(self):
+    
+    # 1. 20 e, VGG-16, coarse, VGG-5, 
+    # 2. 20 e, VGG-5, fine 0, conditon=0, VGG-5. if < 5, coarse lock. if > 5, VGG-7
+    # 3. 20 e, VGG-5, fine 1, conditon=1, VGG-5. 
+    # 4. 20 e, VGG-5, fine 2, conditon=2, VGG-5. 
+    
+    def train_coarse(self):
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32, 
                                               shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
@@ -121,10 +129,10 @@ class Solver_Train(object):
 
         # logits of branches
         #print(logits_exit0.shape, logits_exit1.shape, logits_exit2.shape)
-        loss_exit0 = cross_entropy(logits_exit0, self.label_placeholder)
-        loss_exit1 = cross_entropy(logits_exit1, self.label_placeholder)
-        loss_exit2 = cross_entropy(logits_exit2, self.label_placeholder)
-        loss_exit3 = cross_entropy(logits_exit3, self.label_placeholder)
+        loss_exit0 = cross_entropy(logits_exit0, self.label_placeholder_0)
+        loss_exit1 = cross_entropy(logits_exit1, self.label_placeholder_1)
+        loss_exit2 = cross_entropy(logits_exit2, self.label_placeholder_2)
+        loss_exit3 = cross_entropy(logits_exit3, self.label_placeholder_3)
         total_loss = tf.reduce_sum(tf.multiply(self.earlyexit_lossweights_placeholder, 
                                                [loss_exit0, loss_exit1, loss_exit2, loss_exit3]))
         opt_exit2 = tf.train.AdamOptimizer(learning_rate=self.lr, beta1=0.9, beta2=0.999, epsilon=1e-8)
@@ -171,7 +179,7 @@ class Solver_Train(object):
             print("\n===> epoch: %d/%d" %(epoch, self.epochs))
             
             ds_train = self.load_data(is_train=True)
-            for train_data_batch, train_label_batch in tfe.Iterator(ds_train):
+            for train_data_batch, train_label_b_batch, train_label_c_batch, train_label_bc_batch in tfe.Iterator(ds_train):
                 if epoch > self.baseline_epoch:
                     _, train_loss, exit0_loss, exit1_loss, exit2_loss, exit3_loss, \
                     train_error0, train_error1, train_error2, train_error3 = \
@@ -201,7 +209,7 @@ class Solver_Train(object):
                     progress_bar(train_step_num, self.train_step)
 
             train_error_array = np.array(train_error_list)
-            print('Average loss: {:.4f}'.format(sum(total_loss_list) / len(total_loss_list))
+            print('Average loss: {:.4f}'.format(sum(total_loss_list) / len(total_loss_list)))
             print('Average training acc: {:.4f}| {:.4f} | {:.4f}| {:.4f}'.format(np.mean(train_error_array[:, 0]),
                                                                                  np.mean(train_error_array[:, 1]),
                                                                                  np.mean(train_error_array[:, 2]),
@@ -247,7 +255,7 @@ class Solver_Train(object):
         saver.restore(sess, os.path.join(self.checkpoint_path, 'B_VGG.ckpt'))
 
         # load all data in memory
-        _, (val_data, val_label) = self.load_data()
+#         _, (val_data, val_label) = self.load_data()
         coarse_crrect = 0
         fine1_crrect = 0
         fine2_crrect = 0
@@ -277,7 +285,7 @@ class Solver_Train(object):
         action_fine_3 = action[3]
 
         ds_test = self.load_data(is_train=False)
-        for test_data_batch, test_label_batch in tfe.Iterator(ds_test):
+        for test_data_batch, test_label_b_batch, test_label_c_batch, test_label_bc_batch in tfe.Iterator(ds_test):
             coarse_point, fine_1_point, fine_2_point, fine_3_point, \
             exit0_pred, test_acc0 = sess.run([convertPosition[action[0]], convertPosition[action[1]], 
                                               convertPosition[action[2]], convertPosition[action[3]],
@@ -340,10 +348,11 @@ class Solver_Train(object):
         sess.close()
         #overall accuracy
         return sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)
-   
+ 
+
 def main():
 
-    parser = argparse.ArgumentParser(description='Branchy_AlexNet with CIFAR-10')
+    parser = argparse.ArgumentParser(description='Branchy_VGG with Stool Image Dataset')
     # Training parameters
     parser.add_argument('--phase', default='train', type=str, help='Train model or test')
     parser.add_argument('--cuda', default='0', type=str, help='CUDA Visible devices',)
