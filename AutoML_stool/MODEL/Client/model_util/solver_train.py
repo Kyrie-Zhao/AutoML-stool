@@ -29,7 +29,6 @@ from MODEL.Client.model_util.augementation import *
 #from AlexNet import B_AlexNet
 #config = tf.compat.v1.ConfigProto()
 #config.gpu_options.allow_growth = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 #tf.device('/gpu:0')
 
 
@@ -118,6 +117,7 @@ class Solver_Train(object):
         return ds
     
     def train_coarse(self):
+
         ds_train_0, ds_train_1, ds_train_2, ds_train_3, ds_train_4, ds_train_5, ds_train_6 = self.load_data_train()
         for epoch in range(1, self.epochs + 1):
             # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
@@ -410,15 +410,22 @@ class Solver_Train(object):
         sess.close()
         #overall accuracy
         return sum([fine1_crrect,fine2_crrect,fine3_crrect]) / len(val_label)
- 
 
-def main():
-
+def get_parser():
+    """
+    Creates an argument parser.
+    """
     parser = argparse.ArgumentParser(description='Branchy_VGG with Stool Image Dataset')
     # Training parameters
     parser.add_argument('--phase', default='train', type=str, help='Train model or test')
-    parser.add_argument('--cuda', default='0', type=str, help='CUDA Visible devices',)
-    args = parser.parse_args()
+    parser.add_argument('--cuda', default='0', type=str, help='CUDA visible devices',)
+    return parser
+    
+def main():
+    parser = get_parser()
+    args = parser.parse_args(args)
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
+
     solver = Solver_Train()
     if args.phase == 'train':
         solver.train()
