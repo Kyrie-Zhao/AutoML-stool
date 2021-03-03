@@ -94,7 +94,7 @@ class B_VGGNet(object):
             logits_exit = fc_layer(self.fc2, self.num_class,name='logits_exit')
 
         with tf.variable_scope("coarse"):
-            print(self.convertPosition[self.position[0]])
+#             print(self.convertPosition[self.position[0]])
             self.coarse = max_pooling(self.convertPosition[self.position[0]], k_size=2, stride=2,name='maxpool1')
             self.coarse = Flatten(self.coarse)
             self.coarse = fc_layer(self.coarse, 4096,name='fc1')
