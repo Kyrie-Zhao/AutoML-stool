@@ -7,8 +7,7 @@ import numpy as np
 import pandas as pd
 
 import tensorflow as tf
-# tf.enable_eager_execution()
-# tf.compat.v1.disable_eager_execution() # what for?
+tf.compat.v1.disable_eager_execution()
 from tensorflow.python.framework import graph_util
 from tensorflow.python.platform import gfile
 import tensorflow.contrib.eager as tfe
@@ -21,17 +20,11 @@ import string
 import datetime
 import cv2
 
-# from VGG import B_VGGNet
-# from loss import *
-# from utils import read_all_batches, read_val_data, write_pickle
-# from misc import progress_bar
-# from augementation import *
-
-from MODEL.Client.model_util.VGG import B_VGGNet
-from MODEL.Client.model_util.loss import *
-from MODEL.Client.model_util.utils import read_all_batches, read_val_data, write_pickle
-from MODEL.Client.model_util.misc import progress_bar
-from MODEL.Client.model_util.augementation import *
+from VGG import B_VGGNet
+from loss import *
+from utils import read_all_batches, read_val_data, write_pickle
+from misc import progress_bar
+from augementation import *
 
 
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -123,7 +116,7 @@ class Solver_Train(object):
         ds = tf.data.Dataset.from_tensor_slices((paths_file, labels_b, labels_c, labels_bc))
         ds = ds.map(self.read_image).map(self.augment).batch(self.test_batch_size)
         return ds
-    
+
 
     def train_coarse(self,position):
         # create placeholder
@@ -171,7 +164,7 @@ class Solver_Train(object):
         batch_4 = ds_train_4.make_one_shot_iterator().get_next()
         batch_5 = ds_train_5.make_one_shot_iterator().get_next()
         batch_6 = ds_train_6.make_one_shot_iterator().get_next()
-        
+
         for epoch in range(1, self.epochs + 1): # self.epochs = 10 * (MAX_SIZE/2)
             step_list = []
             train_error_list = []
@@ -189,12 +182,14 @@ class Solver_Train(object):
 
             X_train = tf.concat((X_train_0, X_train_1, X_train_2, X_train_3,
                                  X_train_4, X_train_5, X_train_6), 0)
+
             y_c_train = tf.concat((y_c_train_0, y_c_train_1, y_c_train_2, y_c_train_3,
                                    y_c_train_4, y_c_train_5, y_c_train_6), 0)
             #(14, 256, 256, 3)
-
-            _, train_loss, train_error0 = sess.run([train_op, total_loss, train_acc0], 
-                                                   feed_dict={self.img_placeholder: X_train, 
+            X_train = sess.run(X_train)
+            y_c_train = sess.run(y_c_train)
+            _, train_loss, train_error0 = sess.run([train_op, loss_exit0, train_acc0],
+                                                   feed_dict={self.img_placeholder: X_train,
                                                               self.label_placeholder: y_c_train,
                                                               self.training_flag: True})
             train_error_list.append([train_error0])
@@ -205,6 +200,7 @@ class Solver_Train(object):
 
         save_path = saver.save(sess, os.path.join(self.checkpoint_path, 'coarse.ckpt'))
         sess.close()
+        exit(1)
 
     def train_fine(self,position):
         #Action
@@ -270,7 +266,7 @@ class Solver_Train(object):
         batch_4 = ds_train_4.make_one_shot_iterator().get_next()
         batch_5 = ds_train_5.make_one_shot_iterator().get_next()
         batch_6 = ds_train_6.make_one_shot_iterator().get_next()
-        
+
         for epoch in range(1, self.epochs + 1):
             # balacned sampling: smaple x from each class. (default, x=2, batch size = 2*7)
             X_train_0, y_b_train_0, y_c_train_0, y_bc_train_0 = sess.run(batch_0)
@@ -290,17 +286,17 @@ class Solver_Train(object):
 
             #FINE1
             if(action_fine_1<=action_coarse):
-                fine1_out = sess.run([convertPosition[action_fine_1]], 
+                fine1_out = sess.run([convertPosition[action_fine_1]],
                                      feed_dict={self.img_placeholder: X_train_f0,
                                                 self.label_placeholder: y_bc_train_f0,
                                                 self.training_flag: False})
                 _, train_loss, train_error1 = sess.run([train_op, total_loss, train_acc1],
                                                        feed_dict={self.img_placeholder: fine1_out,
-                                                                  self.label_placeholder: y_bc_train_f0, 
-                                                                  self.earlyexit_lossweights_placeholder: [0.3,0.4,0.3], 
+                                                                  self.label_placeholder: y_bc_train_f0,
+                                                                  self.earlyexit_lossweights_placeholder: [0.3,0.4,0.3],
                                                                   self.training_flag: True})
             else:
-                coarse_out = sess.run([convertPosition[action_coarse]], 
+                coarse_out = sess.run([convertPosition[action_coarse]],
                                       feed_dict={self.img_placeholder: X_train_f0,
                                                  self.label_placeholder: y_bc_train_f0,
                                                  self.training_flag: False})
@@ -337,7 +333,7 @@ class Solver_Train(object):
                                                                   self.earlyexit_lossweights_placeholder: [0.3,0.4,0.3],
                                                                   self.training_flag: True})
             else:
-                coarse_out = sess.run([convertPosition[action_coarse]], 
+                coarse_out = sess.run([convertPosition[action_coarse]],
                                       feed_dict={self.img_placeholder: X_train_f2,
                                                  self.label_placeholder: y_bc_train_f2,
                                                  self.training_flag: False})
@@ -359,7 +355,7 @@ class Solver_Train(object):
             #FINE3
 
     def test(self):
-        
+
         ds_test = self.load_data_test()
         for X_test, y_b_test, y_c_test, y_bc_test in tfe.Iterator(ds_test):
 
