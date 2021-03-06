@@ -21,6 +21,11 @@ import string
 import datetime
 import cv2
 
+"""from VGG import B_VGGNet
+from loss import *
+from utils import read_all_batches, read_val_data, write_pickle
+from misc import progress_bar
+from augementation import *"""
 from MODEL.Client.model_util.VGG import B_VGGNet
 from MODEL.Client.model_util.loss import *
 from MODEL.Client.model_util.utils import read_all_batches, read_val_data, write_pickle
@@ -42,9 +47,10 @@ class Solver_Train(object):
         #self.data_root = './data/cifar-10-python/cifar-10-batches-py'
         self.position = position
         self.data_root = 'MODEL/Client/model_util/dataset_v4'
+        #self.data_root = './dataset_v4'
         self.num_class = 3
-        self.input_w = 28
-        self.input_h = 28
+        self.input_w = 32
+        self.input_h = 32
         self.input_c = 3
         # Training parameter
         self.position = position
@@ -123,6 +129,7 @@ class Solver_Train(object):
 
 
     def train_coarse(self,action):
+        tf.reset_default_graph()
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32,
                                               shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
@@ -212,7 +219,6 @@ class Solver_Train(object):
     def train_fine(self,action):
         #position=[5,7,9,7]
         tf.reset_default_graph()
-
 
         # create placeholder
         #self.ip = tf.placeholder(dtype=tf.float32,shape=[6,7,7,128])
@@ -613,10 +619,10 @@ class Solver_Train(object):
             'fine_1': fine_1_line,
             'fine_2': fine_2_line,
             'fine_3': fine_3_line,
-            'exit0': [['coarse/fc1', 'coarse/fc2'], 0],
-            'exit1': [['fine_1/fc1', 'fine_1/fc2'], 0],
-            'exit2': [['fine_2/fc1', 'fine_2/fc2'], 0],
-            'exit3': [['fine_3/fc1', 'fine_3/fc2'], 0]
+            'exit0': [['coarse/coarse_fc1', 'coarse/coarse_fc2'], 0],
+            'exit1': [['fine_1/fine_1_fc1', 'fine_1/fine_1_fc2'], 0],
+            'exit2': [['fine_2/fine_2_fc1', 'fine_2/fine_2_fc2'], 0],
+            'exit3': [['fine_3/fine_3_fc1', 'fine_3/fine_3_fc2'], 0]
             }
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
@@ -669,6 +675,8 @@ class Solver_Train(object):
     def train(self):
         #self.position = [5,7,9,7]
         self.train_coarse(self.position)
+
+        #self.position = [5,7,9,7]
         self.train_fine(self.position)
         accuracy, fine1_num, fine2_num, fine3_num = self.test(self.position)
         print("overall accuracy")
