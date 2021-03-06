@@ -1,4 +1,4 @@
-from layers import *
+from MODEL.Client.model_util.layers import *
 import tensorflow as tf
 import numpy as np
 import copy
@@ -115,7 +115,7 @@ class B_VGGNet(object):
             self.coarse = fc_layer(self.coarse, 4096,name='fc1')
             self.coarse = Relu(self.coarse,name='fc1_relu')
             self.coarse = Drop_out(self.coarse, 0.2, training=is_train)
-            logits_coarse = fc_layer(self.coarse, 3, name='logits_coarse')
+            logits_coarse = fc_layer(self.coarse, 3, name='fc2')
 
         with tf.variable_scope("fine_1"):
             self.fine_1 = max_pooling(self.convertPosition[self.position[1]], k_size=2, stride=2,name='maxpool1')
@@ -123,7 +123,7 @@ class B_VGGNet(object):
             self.fine_1 = fc_layer(self.fine_1, 4096,name='fc1')
             self.fine_1 = Relu(self.fine_1,name='fc1_relu')
             self.fine_1 = Drop_out(self.fine_1, 0.2, training=is_train)
-            logits_fine_1= fc_layer(self.fine_1, 2,name='logits_fine_1')
+            logits_fine_1= fc_layer(self.fine_1, 2,name='fc2')
 
         with tf.variable_scope("fine_2"):
             self.fine_2 = max_pooling(self.convertPosition[self.position[2]], k_size=2, stride=2,name='maxpool1')
@@ -131,7 +131,7 @@ class B_VGGNet(object):
             self.fine_2 = fc_layer(self.fine_2, 4096,name='fc1')
             self.fine_2 = Relu(self.fine_2,name='fc1_relu')
             self.fine_2 = Drop_out(self.fine_2, 0.2, training=is_train)
-            logits_fine_2 = fc_layer(self.fine_2, 3,name='logits_fine_2')
+            logits_fine_2 = fc_layer(self.fine_2, 3,name='fc2')
 
         with tf.variable_scope("fine_3"):
             self.fine_3 = max_pooling(self.convertPosition[self.position[3]], k_size=2, stride=2,name='maxpool1')
@@ -139,5 +139,5 @@ class B_VGGNet(object):
             self.fine_3 = fc_layer(self.fine_3, 4096,name='fc1')
             self.fine_3 = Relu(self.fine_3,name='fc1_relu')
             self.fine_3 = Drop_out(self.fine_3, 0.2, training=is_train)
-            logits_fine_3 = fc_layer(self.fine_3, 2, name='logits_fine_3')
+            logits_fine_3 = fc_layer(self.fine_3, 2, name='fc2')
         return [logits_coarse, logits_fine_1, logits_fine_2, logits_fine_3]

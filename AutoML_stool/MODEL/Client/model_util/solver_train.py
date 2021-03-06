@@ -21,11 +21,11 @@ import string
 import datetime
 import cv2
 
-from VGG import B_VGGNet
-from loss import *
-from utils import read_all_batches, read_val_data, write_pickle
-from misc import progress_bar
-from augementation import *
+from MODEL.Client.model_util.VGG import B_VGGNet
+from MODEL.Client.model_util.loss import *
+from MODEL.Client.model_util.utils import read_all_batches, read_val_data, write_pickle
+from MODEL.Client.model_util.misc import progress_bar
+from MODEL.Client.model_util.augementation import *
 
 
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -41,7 +41,7 @@ class Solver_Train(object):
     def __init__(self, position=[0, 0, 0, 0]):
         #self.data_root = './data/cifar-10-python/cifar-10-batches-py'
         self.position = position
-        self.data_root = './dataset_v4'
+        self.data_root = 'MODEL/Client/model_util/dataset_v4'
         self.num_class = 3
         self.input_w = 28
         self.input_h = 28
@@ -122,7 +122,7 @@ class Solver_Train(object):
         return ds
 
 
-    def train_coarse(self,position):
+    def train_coarse(self,action):
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32,
                                               shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
@@ -132,7 +132,7 @@ class Solver_Train(object):
                                                 name='label_placeholder')
         self.training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
 
-        self.B_VGG_instance = B_VGGNet(num_class=self.num_class)
+        self.B_VGG_instance = B_VGGNet(self.num_class,action)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(self.img_placeholder, # 2 F1
                                                                                is_train=self.training_flag)
         print('VGG DONE')
@@ -209,8 +209,8 @@ class Solver_Train(object):
         print("Train coarse end")
         #exit(1)
 
-    def train_fine(self,position):
-        position=[5,7,9,7]
+    def train_fine(self,action):
+        #position=[5,7,9,7]
         tf.reset_default_graph()
 
 
@@ -229,7 +229,7 @@ class Solver_Train(object):
                                                                 shape=[3],
                                                                 name='earlyexit_lossweights_placeholder')"""
         # create model and build graph
-        self.B_VGG_instance = B_VGGNet(num_class=self.num_class)
+        self.B_VGG_instance = B_VGGNet(self.num_class,action)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(img_placeholder,
                                                                                              is_train=training_flag)
         #Action
@@ -239,10 +239,10 @@ class Solver_Train(object):
                          self.B_VGG_instance.max_pool3, self.B_VGG_instance.conv8, self.B_VGG_instance.conv9,
                          self.B_VGG_instance.conv10, self.B_VGG_instance.max_pool4, self.B_VGG_instance.conv11,
                          self.B_VGG_instance.conv12, self.B_VGG_instance.conv13]"""
-        action_coarse = position[0]
-        action_fine_1 = position[1]
-        action_fine_2 = position[2]
-        action_fine_3 = position[3]
+        action_coarse = action[0]
+        action_fine_1 = action[1]
+        action_fine_2 = action[2]
+        action_fine_3 = action[3]
         # prediction from branches
         pred1 = tf.nn.softmax(logits_exit1, name='pred_exit1')
         pred2 = tf.nn.softmax(logits_exit2, name='pred_exit2')
@@ -266,7 +266,7 @@ class Solver_Train(object):
         opt_exit2 = tf.train.AdamOptimizer(learning_rate=self.lr, beta1=0.9, beta2=0.999, epsilon=1e-8)
         update_ops = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                         scope=tmp_scope)
-        print(update_ops)
+        #print(update_ops)
 
         train_op_1 = opt_exit2.minimize(loss_exit1, var_list=update_ops)
         train_op_2 = opt_exit2.minimize(loss_exit2, var_list=update_ops)
@@ -419,7 +419,7 @@ class Solver_Train(object):
     def test(self, action):
         tf.reset_default_graph()
         print("test begins")
-        action = [5,7,9,7]
+        #action = [5,7,9,7]
         coarse_num = 0
 
         coarse_crrect = 0
@@ -470,17 +470,14 @@ class Solver_Train(object):
         ds_test = self.load_data_test()
         batch_test = ds_test.make_one_shot_iterator().get_next()
         for i in range(552):
+            if i%50==0:
+                print(i)
             X_test, y_b_test, y_c_test, y_bc_test = sess.run(batch_test)
             coarse_point, fine_1_point, fine_2_point, fine_3_point, exit0_pred, test_acc0 = sess.run([self.B_VGG_instance.convertPosition[action_coarse], self.B_VGG_instance.convertPosition[action_fine_1],self.B_VGG_instance.convertPosition[action_fine_2], self.B_VGG_instance.convertPosition[action_fine_3],
                                               pred0, train_acc0],
                                              feed_dict={img_placeholder: X_test,
                                                         label_placeholder: y_c_test,
                                                         training_flag: False})
-
-            print(np.argmax(exit0_pred))
-            print(y_bc_test[0])
-            print(i)
-            print("end epoch")
 
             coarse_num+=1
             if (test_acc0 == 1):
@@ -491,7 +488,7 @@ class Solver_Train(object):
                 exit1_pred= sess.run(pred1,feed_dict={self.B_VGG_instance.convertPosition[action_fine_1]: fine_1_point,
                                                             label_placeholder: y_bc_test,
                                                             training_flag: False})
-                print(y_bc_test)
+                #print(y_bc_test)
                 """if(action_coarse>=action_fine_1):
                     exit1_pred, test_acc1 = sess.run([pred1, train_acc1],
                                                      feed_dict={self.B_VGG_instance.convertPosition[action_fine_1]: fine_1_point,
@@ -556,92 +553,129 @@ class Solver_Train(object):
         #overall accuracy
         return [sum([fine1_crrect, fine2_crrect, fine3_crrect]) / 552, fine1_num,fine2_num,fine3_num]
 
-    """def conv_flops(self, k_size, c_in, c_out, h_out, w_out):
+    def conv_flops(self, k_size, c_in, c_out, h_out, w_out):
         return 2 * (k_size ** 2) * c_in * h_out * w_out * c_out
 
     def fc_flops(self, num_in, num_out):
         return 2 * num_in * num_out
 
     def flops_Cal(self,fine1_num, fine2_num, fine3_num, action):
-
+        tf.reset_default_graph()
         img_placeholder = tf.placeholder(dtype=tf.float32, shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c], name='image_placeholder')
         training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
         # create model and build graph
         B_VGGNet_instance = B_VGGNet(10,action)
         #Action
-        convertPosition=["baseline/conv1", "baseline/conv2", "baseline/max_pool1",
-                         "baseline/conv3", "baseline/conv4", "baseline/max_pool2",
-                         "baseline/conv5", "baseline/conv6", "baseline/conv7",
-                         "baseline/max_pool3", "baseline/conv8", "baseline/conv9",
-                         "baseline/conv10", "baseline/max_pool4", "baseline/conv11",
-                         "baseline/conv12", "baseline/conv13"]
+        convertPosition=["0/conv1", "1/conv2", "2/max_pool1",
+                         "3/conv3", "4/conv4", "5/max_pool2",
+                         "6/conv5", "7/conv6", "8/conv7",
+                         "9/max_pool3", "10/conv8", "11/conv9",
+                         "12/conv10", "13/max_pool4", "14/conv11",
+                         "15/conv12", "16/conv13"]
         action_coarse = action[0]
         action_fine_1 = action[1]
         action_fine_2 = action[2]
         action_fine_3 = action[3]
 
-        for i in convertPosition[:(action_coarse+1)]
-
+        coarse_line = []
+        fine_1_line = []
+        fine_2_line = []
+        fine_3_line = []
+        tmp_line = []
+        for i in convertPosition[:(action_coarse+1)]:
+            if i[2] is not 'm':
+                tmp_line.append(i)
+        coarse_line.append(tmp_line)
+        coarse_line.append(0)
+        tmp_line = []
+        for i in convertPosition[:(action_fine_1+1)]:
+            if i[2] is not 'm':
+                tmp_line.append(i)
+        fine_1_line.append(tmp_line)
+        fine_1_line.append(0)
+        tmp_line = []
+        for i in convertPosition[:(action_fine_2+1)]:
+            if i[2] is not 'm':
+                tmp_line.append(i)
+        fine_2_line.append(tmp_line)
+        fine_2_line.append(0)
+        tmp_line = []
+        for i in convertPosition[:(action_fine_3+1)]:
+            if i[2] is not 'm':
+                tmp_line.append(i)
+        fine_3_line.append(tmp_line)
+        fine_3_line.append(0)
         [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = B_VGGNet_instance.model(img_placeholder, is_train=training_flag)
 
         layers = {}
-
         parts = {
-            'baseline_1': [['baseline/conv1', 'baseline/conv2','baseline/conv3', 'baseline/conv4'], 0],
-            'baseline_2': [['baseline/conv5','baseline/conv6','baseline/conv7'], 0],
-            'baseline_3': [['baseline/conv8','baseline/conv9','baseline/conv10'], 0],
-            'baseline_4': [['baseline/conv11', 'baseline/conv12', 'baseline/conv13', 'baseline/fc3', 'baseline/fc4', 'baseline/logits_exit3'], 0],
-            'exit0': [['coarse/fc1', 'coarse/logits_exit0'], 0],
-            'exit1': [['fine_1/fc1', 'fine_1/logits_exit1'], 0],
-            'exit1': [['fine_2/fc1', 'fine_2/logits_exit1'], 0],
-            'exit2': [['fine_3/fc1', 'fine_3/logits_exit2'], 0]
+            'coarse': coarse_line,
+            'fine_1': fine_1_line,
+            'fine_2': fine_2_line,
+            'fine_3': fine_3_line,
+            'exit0': [['coarse/fc1', 'coarse/fc2'], 0],
+            'exit1': [['fine_1/fc1', 'fine_1/fc2'], 0],
+            'exit2': [['fine_2/fc1', 'fine_2/fc2'], 0],
+            'exit3': [['fine_3/fc1', 'fine_3/fc2'], 0]
             }
         sess = tf.Session()
         sess.run(tf.global_variables_initializer())
 
-        print(tf.trainable_variables())
+        #print(tf.trainable_variables())
+        #print("zzh")
         for var in tf.trainable_variables():
             if 'conv' in var.name:
+                print(var.name)
+                print("conv")
                 w_out, h_out = sess.graph.get_tensor_by_name(var.name.replace('/kernel:0', '_relu:0')).get_shape().as_list()[1:3]
                 k_size, _, c_in, c_out = var.get_shape().as_list()
-                print(k_size, c_in, c_out)
+                #print(k_size, c_in, c_out)
                 op_name = var.name.replace('/kernel:0', '')
-                layers[op_name] = conv_flops(k_size, c_in, c_out, h_out, w_out)
+                layers[op_name] = self.conv_flops(k_size, c_in, c_out, h_out, w_out)
                 #print(op_name, layers[op_name])
 
             if 'fc' in var.name or 'logits_exit' in var.name:
                 print(var.name)
-
+                print("fc")
                 num_in, num_out = sess.graph.get_tensor_by_name(var.name).get_shape().as_list()
-                print(num_in)
-                print(num_out)
+                #print(num_in)
+                #print(num_out)
                 op_name = var.name.replace('/kernel:0', '')
-                layers[op_name] = fc_flops(num_in, num_out)
+                layers[op_name] = self.fc_flops(num_in, num_out)
 
         tmp = []
+        print("var stop")
+        print(layers)
+        print(parts.keys())
         for key in parts.keys():
             for layer in parts[key][0]:
                 parts[key][1] += layers[layer]
+
             print("{}: {}".format(key, str(parts[key][1] / 1000000)+" MFLOPs"))
             tmp.append(parts[key][1] / 1000000)
+            print("append")
+            print(parts[key][1])
+        print(tmp)
+        coarse_flops = tmp[0]+tmp[4]
+        fine1_flops = tmp[1]+tmp[5]
+        fine2_flops = tmp[2]+tmp[6]
+        fine3_flops = tmp[3]+tmp[7]
+        flops = fine1_num*fine1_flops+fine2_num*fine2_flops+fine3_num*fine3_flops+552*coarse_flops
 
-        exit_0 = tmp[0]+tmp[4]
-        exit_1 = tmp[0]+tmp[1]+tmp[5]
-        exit_2 = tmp[0]+tmp[1]+tmp[2]+tmp[6]
-        exit_3 = tmp[0]+tmp[1]+tmp[2]+tmp[3]
-        print("exit 0: {}, exit 1: {}, exit2: {}, exit3: {} MFLOPS".format(exit_0,exit_1,exit_2,exit_3))
+        print("coarse_flops: {}, fine1_flops: {}, fine2_flops: {}, fine3_flops: {}, total flops: {} MFLOPS".format(coarse_flops,fine1_flops,fine2_flops,fine3_flops,flops))
         sess.close()
-        return flops"""
+        return flops
 
     def train(self):
+        #self.position = [5,7,9,7]
         self.train_coarse(self.position)
         self.train_fine(self.position)
         accuracy, fine1_num, fine2_num, fine3_num = self.test(self.position)
         print("overall accuracy")
         print(accuracy)
-        flops = flops_Cal(fine1_num, fine2_num, fine3_num,self.position)
+        flops = self.flops_Cal(fine1_num, fine2_num, fine3_num,self.position)
 
-        return accuracy, flops
+        return [accuracy, flops]
 
     def test_bk(self,action):
 
