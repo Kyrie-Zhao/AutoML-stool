@@ -209,10 +209,11 @@ class Environment(object):
                 if once:
                     self.a_bound = [self.a_bound[0],self.a_bound[1], self.a_bound[2], self.a_bound[3]]
                     once = False
-                action = np.clip([np.random.rand() * self.a_bound[0],
+                action = [5,7,9,7]
+                """action = np.clip([np.random.rand() * self.a_bound[0],
                                   np.random.rand() * self.a_bound[1],
                                   np.random.rand() * self.a_bound[2],
-                                  np.random.rand() * self.a_bound[3],np.zeros_like(self.a_bound), self.a_bound)
+                                  np.random.rand() * self.a_bound[3],np.zeros_like(self.a_bound), self.a_bound)"""
             # 不随机探索
             else:
                 action = self.rl_model.choose_action(state)
