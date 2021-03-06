@@ -1,4 +1,4 @@
-from MODEL.Client.model_util.layers import *
+from layers import *
 import tensorflow as tf
 import numpy as np
 import copy
@@ -7,7 +7,7 @@ sigma = 0.1
 
 class B_VGGNet(object):
 
-    def __init__(self, num_class=10, position=[5, 7, 9, 11]):
+    def __init__(self, num_class=10, position=[5,7,9,7]):
         self.num_class = num_class
         self.position = position
         self.conv1 = None
@@ -35,51 +35,66 @@ class B_VGGNet(object):
 
     def model(self, x, is_train):
         # conv layer 1
-        with tf.variable_scope("baseline"):
+        with tf.variable_scope("0"):
             self.convertPosition[0]  = Conv2d(x, filters=64, k_size=3, stride=1,name='conv1')
             self.convertPosition[0]  = BN(self.convertPosition[0], phase_train=is_train,name='conv1_bn')
             self.convertPosition[0]  = Relu(self.convertPosition[0],name='conv1_relu')
+        with tf.variable_scope("1"):
             self.convertPosition[1] = Conv2d(self.convertPosition[0], filters=64, k_size=3, stride=1,name='conv2')
             self.convertPosition[1] = BN(self.convertPosition[1], phase_train=is_train,name='conv2_bn')
             self.convertPosition[1] = Relu(self.convertPosition[1],name='conv2_relu')
+        with tf.variable_scope("2"):
             self.convertPosition[2] = max_pooling(self.convertPosition[1], k_size=2, stride=2,name='block1_maxpool')
-
+        with tf.variable_scope("3"):
             self.convertPosition[3] = Conv2d(self.convertPosition[2], filters=128, k_size=3, stride=1,name='conv3')
             self.convertPosition[3] = BN(self.convertPosition[3], phase_train=is_train,name='conv3_bn')
             self.convertPosition[3] = Relu(self.convertPosition[3],name='conv3_relu')
+        with tf.variable_scope("4"):
             self.convertPosition[4] = Conv2d(self.convertPosition[3], filters=128, k_size=3, stride=1,name='conv4')
             self.convertPosition[4] = BN(self.convertPosition[4], phase_train=is_train,name='conv4_bn')
             self.convertPosition[4] = Relu(self.convertPosition[4],name='conv4_relu')
+        with tf.variable_scope("5"):
             self.convertPosition[5] = max_pooling(self.convertPosition[4], k_size=2, stride=2,name='block2_maxpool')
+        with tf.variable_scope("6"):
             #-----------------------------------EXIT
             self.convertPosition[6] = Conv2d(self.convertPosition[5], filters=256, k_size=3, stride=1,name='conv5')
             self.convertPosition[6] = BN(self.convertPosition[6], phase_train=is_train,name='conv5_bn')
             self.convertPosition[6] = Relu(self.convertPosition[6],name='conv5_relu')
+        with tf.variable_scope("7"):
             self.convertPosition[7] = Conv2d(self.convertPosition[6], filters=256, k_size=3, stride=1,name='conv6')
             self.convertPosition[7] = BN(self.convertPosition[7], phase_train=is_train,name='conv6_bn')
             self.convertPosition[7] = Relu(self.convertPosition[7],name='conv6_relu')
+        with tf.variable_scope("8"):
             self.convertPosition[8] = Conv2d(self.convertPosition[7], filters=256, k_size=3, stride=1,name='conv7')
             self.convertPosition[8] = BN(self.convertPosition[8], phase_train=is_train,name='conv7_bn')
             self.convertPosition[8] = Relu(self.convertPosition[8],name='conv7_relu')
+        with tf.variable_scope("9"):
             self.convertPosition[9] = max_pooling(self.convertPosition[8], k_size=2, stride=2,name='block3_maxpool')
             # ----------------------------------EXIT
+        with tf.variable_scope("10"):
             self.convertPosition[10] = Conv2d(self.convertPosition[9], filters=512, k_size=3, stride=1,name='conv8')
             self.convertPosition[10] = BN(self.convertPosition[10], phase_train=is_train,name='conv8_bn')
             self.convertPosition[10] = Relu(self.convertPosition[10],name='conv8_relu')
+        with tf.variable_scope("11"):
             self.convertPosition[11] = Conv2d(self.convertPosition[10], filters=512, k_size=3, stride=1,name='conv9')
             self.convertPosition[11] = BN(self.convertPosition[11], phase_train=is_train,name='conv9_bn')
             self.convertPosition[11] = Relu(self.convertPosition[11],name='conv9_relu')
+        with tf.variable_scope("12"):
             self.convertPosition[12] = Conv2d(self.convertPosition[11], filters=512, k_size=3, stride=1,name='conv10')
             self.convertPosition[12] = BN(self.convertPosition[12], phase_train=is_train,name='conv10_bn')
             self.convertPosition[12] = Relu(self.convertPosition[12],name='conv10_relu')
+        with tf.variable_scope("13"):
             self.convertPosition[13] = max_pooling(self.convertPosition[12], k_size=2, stride=2,name='block4_maxpool')
             #-----------------------------------EXIT
+        with tf.variable_scope("14"):
             self.convertPosition[14] = Conv2d(self.convertPosition[13], filters=512, k_size=3, stride=1,name='conv11')
             self.convertPosition[14] = BN(self.convertPosition[14], phase_train=is_train,name='conv11_bn')
             self.convertPosition[14] = Relu(self.convertPosition[14],name='conv11_relu')
+        with tf.variable_scope("15"):
             self.convertPosition[15] = Conv2d(self.convertPosition[14], filters=512, k_size=3, stride=1,name='conv12')
             self.convertPosition[15] = BN(self.convertPosition[15], phase_train=is_train,name='conv12_bn')
             self.convertPosition[15] = Relu(self.convertPosition[15],name='conv12_relu')
+        with tf.variable_scope("16"):
             self.convertPosition[16] = Conv2d(self.convertPosition[15], filters=512, k_size=3, stride=1,name='conv13')
             self.convertPosition[16] = BN(self.convertPosition[16], phase_train=is_train,name='conv13_bn')
             self.convertPosition[16] = Relu(self.convertPosition[16],name='conv13_relu')
@@ -94,7 +109,7 @@ class B_VGGNet(object):
             logits_exit = fc_layer(self.fc2, self.num_class,name='logits_exit')
 
         with tf.variable_scope("coarse"):
-#             print(self.convertPosition[self.position[0]])
+            print(self.convertPosition[self.position[0]])
             self.coarse = max_pooling(self.convertPosition[self.position[0]], k_size=2, stride=2,name='maxpool1')
             self.coarse = Flatten(self.coarse)
             self.coarse = fc_layer(self.coarse, 4096,name='fc1')
