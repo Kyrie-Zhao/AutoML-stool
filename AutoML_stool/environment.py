@@ -23,6 +23,7 @@ class Environment(object):
         """
         # da or host 0 = host 1 = da
         self.update_RL = 1
+        self.flag_DA = 0
         # init param for rl
         self.dis_dim = dis_dim
         self.scal_dim = scal_dim
@@ -106,6 +107,7 @@ class Environment(object):
         # generate normal
         state = np.random.normal(mean, std)
         print(state)
+        print("state")
 
         return state
 
@@ -154,7 +156,7 @@ class Environment(object):
         self.global_step += 1
 
         #~~~~~~~~~~~``[acc,f\ps]
-        next_state = self.solver.one_step(action.tolist())
+        next_state = self.solver.one_step(action)
         print(next_state)
         # 收集相关数据(step)
         self.step.append(self.global_step)
@@ -206,9 +208,7 @@ class Environment(object):
             late_rl = time.time()
             # 随机探索
             if (i < self.random_step):
-                if once:
-                    self.a_bound = [self.a_bound[0],self.a_bound[1], self.a_bound[2], self.a_bound[3]]
-                    once = False
+
                 action = [5,7,9,7]
                 """action = np.clip([np.random.rand() * self.a_bound[0],
                                   np.random.rand() * self.a_bound[1],
@@ -216,7 +216,9 @@ class Environment(object):
                                   np.random.rand() * self.a_bound[3],np.zeros_like(self.a_bound), self.a_bound)"""
             # 不随机探索
             else:
-                action = self.rl_model.choose_action(state)
+                action_raw = self.rl_model.choose_action(state)
+                action = [ int(x) for x in action_raw ]
+
 
             late_rl = time.time() - late_rl
             print("Action Choose")
@@ -230,8 +232,11 @@ class Environment(object):
                 print(e)
                 break
 
-            print("Big interval state")
+            print("STATE ACTION REWARD NEXT")
             print(state)
+            print(action)
+            print(reward)
+            print(next_state)
             # store the transition to rl_model memory
             self.rl_model.store_transition(state, action, reward, next_state)
             # store the domain adaptation tragetary
@@ -261,10 +266,9 @@ class Environment(object):
             state = next_state
 
         # --optional: plot the param
-        plot = True
+        plot = False
         if plot:
             def plot_data(x_data, y_data, title=' ', x_label=' ', y_label=' ', save=False):
-                """plot data"""
                 # new figure
                 plt.figure()
                 # plot, set x, y label and title
@@ -293,7 +297,6 @@ class Environment(object):
             plot_data(self.epoch, self.accuracy_epoch, title="accuracy_epoch")
             plot_data(self.epoch, self.reward, title="reward")
             plot_data(self.step, self.accuracy, title="accuracy")
-
             print("accuracy ")
             print(np.mean(self.accuracy_epoch))
             print("reward ")
@@ -316,7 +319,7 @@ if __name__ == '__main__':
     """
     dis_dim = 0
     #[Coarse position, fine position]
-    a_bound = [16, 16, 16, 16]
+    a_bound = [0,16, 16, 16, 16]
     #bandwidth [FLOPS, ACC]
     s_bound = [1, 1]
     scal_dim = np.shape(a_bound[1:])[0]
