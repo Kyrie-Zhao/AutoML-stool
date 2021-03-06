@@ -5,10 +5,8 @@ import time
 import sys
 import numpy as np
 import tensorflow.compat.v1 as tf
-from VGG import B_VGGNet
 tf.disable_v2_behavior()
-
-from model_util.solver_train import Solver_Train
+from MODEL.Client.model_util.solver_train import Solver_Train
 
 
 tf.set_random_seed(123)
@@ -94,18 +92,17 @@ class Solver(object):
 
         sess.close()
 
-    def one_step(self,action):
+    def one_step(self,action=[1,1,1,1]):
         """
         作为class的主函数
         :return:
         """
         solver_train = Solver_Train(action)
-        solver_train.train()
+        accuracy, flops = solver_train.train()
         #exit0_crrect / exit0_num, exit1_crrect / exit1_num, exit2_crrect / exit2_num
-        accuracy = solver_train.test()
-        fps = flops_CAL(action)
+
         print("One Step Stop")
-        return [accuracy,fps]
+        return [accuracy,flops]
 
 
 def main():
