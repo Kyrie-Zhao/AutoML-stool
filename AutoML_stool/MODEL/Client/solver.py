@@ -1,17 +1,11 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import warnings
-warnings.filterwarnings('ignore')
-
 import logging
 import psutil
 import time
 import sys
 import numpy as np
-# import tensorflow.compat.v1 as tf
-import tensorflow as tf
-
-# tf.disable_v2_behavior()
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 from MODEL.Client.model_util.solver_train import Solver_Train
 
 
@@ -44,6 +38,8 @@ class Solver(object):
         #exit0_crrect / exit0_num, exit1_crrect / exit1_num, exit2_crrect / exit2_num
 
         print("One Step Stop")
+        print(accuracy)
+        print(flops)
         return [accuracy,flops]
 
 
