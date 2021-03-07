@@ -119,7 +119,7 @@ class B_VGGNet(object):
             logits_coarse = fc_layer(self.coarse, 3, name='coarse_fc2')
 
         with tf.variable_scope("fine_1"):
-            print(self.position[1])
+            #print(self.position[1])
             self.fine_1 = max_pooling(self.convertPosition[self.position[1]], k_size=2, stride=2,name='maxpool1')
             self.fine_1 = Flatten(self.fine_1)
             self.fine_1 = fc_layer(self.fine_1, 4096,name='fine_1_fc1')
