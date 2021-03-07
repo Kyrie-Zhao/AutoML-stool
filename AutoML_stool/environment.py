@@ -118,7 +118,6 @@ class Environment(object):
 
     def calculate_p(self, acc, fps):
         """
-        """
         if acc < 0.3:
             reward = -1
         elif acc<0.4:
@@ -128,15 +127,13 @@ class Environment(object):
         elif acc<0.6:
             reward = 0
         else:
-            reward = 152106/fps
+            reward = fps"""
+        reward = -(1-acc)*fps
         return reward
 
 
 
     def calculate_reward(self, state):
-        """
-
-        """
         # state_dim = [acc, latency, power]
         acc, fps = state[0], state[1]
         # calculate reward
@@ -151,6 +148,7 @@ class Environment(object):
             calculate_reward => a function mapping state to reward
 
         """
+        print("take_action")
         # 全局step加1，用于标志数据收集
         print("action")
         print(action)
@@ -162,8 +160,13 @@ class Environment(object):
 
         self.global_step += 1
 
-        #~~~~~~~~~~~``[acc,f\ps]
+        #~~~~~~~~~~~``[acc,fps]
         next_state = self.solver.one_step(action)
+        next_state[1] = 275/next_state[1]
+        next_state.append(action[0])
+        next_state.append(action[1])
+        next_state.append(action[2])
+        next_state.append(action[3])
         print(next_state)
         # 收集相关数据(step)
         self.step.append(self.global_step)
@@ -182,7 +185,7 @@ class Environment(object):
         self.reward.append(reward)
 
         # 返回rl的观测数据
-        return np.array([next_state[0], next_state[1]]), reward
+        return np.array([next_state[0], next_state[1], next_state[2], next_state[3], next_state[4], next_state[5]]), reward
 
     def main(self, epoch):
         """
@@ -216,7 +219,7 @@ class Environment(object):
             # 随机探索
             if (i < self.random_step):
 
-                action = [5,7,9,7]
+                action = [0,0,0,0]
                 self.action.append(action)
                 """action = np.clip([np.random.rand() * self.a_bound[0],
                                   np.random.rand() * self.a_bound[1],
@@ -235,8 +238,8 @@ class Environment(object):
             # take action according to the action, get reward and next_state
             try:
                 next_state, reward = self.take_action(action, late_rl)
-                print("next state values")
-                print(next_state)
+                #print("next state values")
+                #print(next_state)
             except Exception as e:
                 print(e)
                 break
@@ -255,7 +258,7 @@ class Environment(object):
             # if train then train rl
             if self.train:
                 self.rl_model.learn()
-                if (i % 500 == 0):
+                if (i % 5 == 0):
                     env.rl_model.save_model_checkpoint()
                     print("Store RL")
 
@@ -307,10 +310,11 @@ class Environment(object):
             with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
                 json.dump(itemZip, fs)
 
-            self.action = [tmp.tolist() for tmp in self.action]
+            #self.action = [tmp.tolist() for tmp in self.action]
             itemZip = dict(zip(self.epoch,self.action))
             with open('action.json', 'w', encoding='utf-8') as fs:
                 json.dump(itemZip, fs)
+                """
 
             plot_data(self.epoch, self.accuracy_epoch, title="accuracy_epoch")
             plot_data(self.epoch, self.reward, title="reward")
@@ -328,19 +332,19 @@ class Environment(object):
                 np.save('da.npy',da_toFile )
             #print(da_toFile)
             print("Store Domain Adaptation Successfully!")
-
+"""
 
 
 if __name__ == '__main__':
     # when use:
-    """
-    action[]
-    """
+
+    #action[]
+
     dis_dim = 0
     #[Coarse position, fine position]
     a_bound = [0,16, 16, 16, 16]
     #bandwidth [FLOPS, ACC]
-    s_bound = [1, 1]
+    s_bound = [1, 1,16,16,16,16]
     scal_dim = np.shape(a_bound[1:])[0]
     s_dim = np.shape(s_bound)[0]
     scal_var = 0.1
@@ -358,7 +362,7 @@ if __name__ == '__main__':
                       train=train)
 
     # for epoch
-    epoch = 100
+    epoch = 20
 
     # run main
     env.main(epoch=epoch)
