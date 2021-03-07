@@ -39,7 +39,7 @@ from MODEL.Client.model_util.augementation import *
 #config.gpu_options.allow_growth = True
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-MAX_SIZE = 10
+MAX_SIZE = 6
 
 class Solver_Train(object):
 
@@ -53,7 +53,6 @@ class Solver_Train(object):
         self.input_h = 32
         self.input_c = 3
         # Training parameter
-        self.position = position
         self.train_batch_size = 18
         self.test_batch_size = 1
         self.lr = 0.001
@@ -130,6 +129,7 @@ class Solver_Train(object):
 
     def train_coarse(self,action):
         tf.reset_default_graph()
+
         # create placeholder
         self.img_placeholder = tf.placeholder(dtype=tf.float32,
                                               shape=[self.train_batch_size, self.input_w, self.input_h, self.input_c],
@@ -137,6 +137,15 @@ class Solver_Train(object):
         self.label_placeholder = tf.placeholder(dtype=tf.int32,
                                                 shape=[self.train_batch_size],
                                                 name='label_placeholder')
+        action_coarse = action[0]
+        img_placeholder_test = tf.placeholder(dtype=tf.float32,
+                                              shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c],
+                                              name='image_placeholder_fine')
+
+        label_placeholder_test = tf.placeholder(dtype=tf.int32,
+                                                shape=[self.test_batch_size],
+                                                name='label_placeholder')
+
         self.training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
 
         self.B_VGG_instance = B_VGGNet(self.num_class,action)
@@ -154,8 +163,8 @@ class Solver_Train(object):
         # accuracy from brach
         train_acc0 = top_k_error(pred0, self.label_placeholder, 1)
 
-        for var in tf.trainable_variables():
-            print(var.name, var.get_shape())
+        """for var in tf.trainable_variables():
+            print(var.name, var.get_shape())"""
 
         # Initialize model and create session
         init = tf.initialize_all_variables()
@@ -175,7 +184,7 @@ class Solver_Train(object):
         batch_4 = ds_train_4.make_one_shot_iterator().get_next()
         batch_5 = ds_train_5.make_one_shot_iterator().get_next()
         batch_6 = ds_train_6.make_one_shot_iterator().get_next()
-
+        best_test_acc = 0
         for epoch in range(1, self.epochs + 1): # self.epochs = 10 * (MAX_SIZE/2)
             step_list = []
             train_error_list = []
@@ -207,10 +216,30 @@ class Solver_Train(object):
             total_loss_list.append(train_loss)
             #print('Loss: {:.4f}'.format(train_loss))
 
-
             #print('Acc: {:.4f} | {:.4f} | {:.4f}| {:.4f}'.format(train_error0, train_error1, train_error2, train_error3))
             progress_bar(epoch, self.epochs + 1)
 
+            """if (epoch%int(MAX_SIZE/self.train_batch_size*7)==0):
+                print("fuk")
+                ds_test = self.load_data_test()
+                batch_test = ds_test.make_one_shot_iterator().get_next()
+                coarse_num = 0
+                coarse_crrect = 0
+                for i in range(552):
+                    X_test, y_b_test, y_c_test, y_bc_test = sess.run(batch_test)
+                    coarse_point,exit0_pred, test_acc0 = sess.run([self.B_VGG_instance.convertPosition[action_coarse],
+                                                      pred0, train_acc0],
+                                                     feed_dict={img_placeholder_test: X_test,
+                                                                label_placeholder_test: y_c_test,
+                                                                self.training_flag: False})
+                    coarse_num+=1
+                    if (test_acc0 == 1):
+                        coarse_crrect+=1
+                if (coarse_crrect/coarse_num>best_test_acc):
+                    save_path = saver.save(sess, os.path.join(self.checkpoint_path, './coarse.ckpt'))
+                    best_test_acc = coarse_test(action)
+                    print("best accuracy:")
+                    print(best_test_acc)"""
         save_path = saver.save(sess, os.path.join(self.checkpoint_path, './coarse.ckpt'))
         sess.close()
         print("Train coarse end")
@@ -235,9 +264,12 @@ class Solver_Train(object):
                                                                 shape=[3],
                                                                 name='earlyexit_lossweights_placeholder')"""
         # create model and build graph
-        self.B_VGG_instance = B_VGGNet(self.num_class,action)
-        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = self.B_VGG_instance.model(img_placeholder,
+        print("build fine model")
+        B_VGG_instance = B_VGGNet(self.num_class,action)
+        print("opt fine")
+        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = B_VGG_instance.model(img_placeholder,
                                                                                              is_train=training_flag)
+        print("opt fine")
         #Action
         """convertPosition=[self.B_VGG_instance.conv1, self.B_VGG_instance.conv2, self.B_VGG_instance.max_pool1,
                          self.B_VGG_instance.conv3, self.B_VGG_instance.conv4, self.B_VGG_instance.max_pool2,
@@ -262,27 +294,50 @@ class Solver_Train(object):
         # logits of branches
         # accuracy from brach
 
-        tmp_scope = ""
-        for tmp in range(action_coarse+1,17):
-            if tmp is not 16:
-                tmp_scope = tmp_scope+str(tmp)+"|"
-            else:
-                tmp_scope = tmp_scope +str(tmp)
+        tmp_scope_fine_1 = ""
+        if action_fine_1<=action_coarse:
+            tmp_scope_fine_1 = 'fine_1'
+        else:
+            for tmp in range(action_coarse+1,action_fine_1+1):
+                tmp_scope_fine_1 = tmp_scope_fine_1+str(tmp)+"|"
+            tmp_scope_fine_1 = tmp_scope_fine_1+'fine_1'
+        update_ops_fine_1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                        scope=tmp_scope_fine_1)
+        print(update_ops_fine_1)
+
+        tmp_scope_fine_2 = ""
+        if action_fine_2<=action_coarse:
+            tmp_scope_fine_2 = 'fine_2'
+        else:
+            for tmp in range(action_coarse+1,action_fine_2+1):
+                tmp_scope_fine_2 = tmp_scope_fine_2+str(tmp)+"|"
+            tmp_scope_fine_2 = tmp_scope_fine_2+'fine_2'
+        update_ops_fine_2 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                        scope=tmp_scope_fine_2)
+        print(update_ops_fine_2)
+        tmp_scope_fine_3 = ""
+        if action_fine_3<=action_coarse:
+            tmp_scope_fine_3 = 'fine_3'
+        else:
+            for tmp in range(action_coarse+1,action_fine_3+1):
+                tmp_scope_fine_3 = tmp_scope_fine_3+str(tmp)+"|"
+            tmp_scope_fine_3 = tmp_scope_fine_3+'fine_2'
+        update_ops_fine_3 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                        scope=tmp_scope_fine_3)
+        print(update_ops_fine_3)
 
         opt_exit2 = tf.train.AdamOptimizer(learning_rate=self.lr, beta1=0.9, beta2=0.999, epsilon=1e-8)
-        update_ops = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                        scope=tmp_scope)
         #print(update_ops)
-
-        train_op_1 = opt_exit2.minimize(loss_exit1, var_list=update_ops)
-        train_op_2 = opt_exit2.minimize(loss_exit2, var_list=update_ops)
-        train_op_3 = opt_exit2.minimize(loss_exit3, var_list=update_ops)
+        print("prepare fine models")
+        train_op_1 = opt_exit2.minimize(loss_exit1, var_list=update_ops_fine_1)
+        train_op_2 = opt_exit2.minimize(loss_exit2, var_list=update_ops_fine_2)
+        train_op_3 = opt_exit2.minimize(loss_exit3, var_list=update_ops_fine_3)
         #train_op_loss_exit1 = opt_exit2.minimize(loss_exit1)
-
+        print("train fine begins1")
         train_acc1 = top_k_error(pred1, label_placeholder, 1)
         train_acc2 = top_k_error(pred2, label_placeholder, 1)
         train_acc3 = top_k_error(pred3, label_placeholder, 1)
-        print("train fine begins1")
+
         module_file = tf.train.latest_checkpoint(os.path.join(self.checkpoint_path, './coarse.ckpt'))
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
@@ -421,6 +476,41 @@ class Solver_Train(object):
 
             #FINE2
             #FINE3
+    def coarse_test(self,action):
+        tf.reset_default_graph()
+        print("coarse test begins")
+        sess = tf.Session()
+        img_placeholder = tf.placeholder(dtype=tf.float32,
+                                              shape=[self.test_batch_size, self.input_w, self.input_h, self.input_c],
+                                              name='image_placeholder')
+        label_placeholder = tf.placeholder(dtype=tf.int32,
+                                                shape=[self.test_batch_size],
+                                                name='label_placeholder')
+        training_flag = tf.placeholder(dtype=tf.bool, shape=[], name='training_flag')
+        B_VGG_instance = B_VGGNet(self.num_class,action)
+        [logits_exit0, logits_exit1, logits_exit2, logits_exit3] = B_VGG_instance.model(img_placeholder,is_train=training_flag)
+        action_coarse = action[0]
+        pred0 = tf.nn.softmax(logits_exit0, name='pred_exit0')
+        train_acc0 = top_k_error(pred0, label_placeholder, 1)
+        module_file = tf.train.latest_checkpoint(os.path.join(self.checkpoint_path, './coarse.ckpt'))
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            if module_file is not None:
+                saver.restore(sess, module_file)
+        ds_test = self.load_data_test()
+        batch_test = ds_test.make_one_shot_iterator().get_next()
+        for i in range(552):
+
+            X_test, y_b_test, y_c_test, y_bc_test = sess.run(batch_test)
+            coarse_point,exit0_pred, test_acc0 = sess.run([self.B_VGG_instance.convertPosition[action_coarse],
+                                              pred0, train_acc0],
+                                             feed_dict={img_placeholder: X_test,
+                                                        label_placeholder: y_c_test,
+                                                        training_flag: False})
+            coarse_num+=1
+            if (test_acc0 == 1):
+                coarse_crrect+=1
+        return coarse_crrect/coarse_num
 
     def test(self, action):
         tf.reset_default_graph()
