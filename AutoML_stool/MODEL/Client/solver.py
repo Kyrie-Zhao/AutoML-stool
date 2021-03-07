@@ -28,7 +28,7 @@ class Solver(object):
 
         a = 1
 
-    def one_step(self,action=[1,1,1,1]):
+    def one_step(self,action):
         """
         作为class的主函数
         :return:
