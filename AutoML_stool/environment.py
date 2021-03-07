@@ -59,6 +59,7 @@ class Environment(object):
     def init_param_to_store(self):
         self.step = []
         self.accuracy = []
+        self.action = []
         self.fps = []
         self.epoch = []
         self.accuracy_epoch = []
@@ -118,10 +119,16 @@ class Environment(object):
     def calculate_p(self, acc, fps):
         """
         """
-        if acc < 0.8:
+        if acc < 0.3:
             reward = -1
+        elif acc<0.4:
+            reward = -0.6
+        elif acc<0.5:
+            reward = -0.4
+        elif acc<0.6:
+            reward = 0
         else:
-            reward = (1-sigmoid(fps))
+            reward = 152106/fps
         return reward
 
 
@@ -210,6 +217,7 @@ class Environment(object):
             if (i < self.random_step):
 
                 action = [5,7,9,7]
+                self.action.append(action)
                 """action = np.clip([np.random.rand() * self.a_bound[0],
                                   np.random.rand() * self.a_bound[1],
                                   np.random.rand() * self.a_bound[2],
@@ -218,6 +226,7 @@ class Environment(object):
             else:
                 action_raw = self.rl_model.choose_action(state)
                 action = [ int(x) for x in action_raw ]
+                self.action.append(action)
 
 
             late_rl = time.time() - late_rl
@@ -266,7 +275,7 @@ class Environment(object):
             state = next_state
 
         # --optional: plot the param
-        plot = False
+        plot = True
         if plot:
             def plot_data(x_data, y_data, title=' ', x_label=' ', y_label=' ', save=False):
                 # new figure
@@ -287,16 +296,26 @@ class Environment(object):
 
 
             itemZip = dict(zip(self.epoch,self.accuracy_epoch))
-            with open('results/accuracy_epoch.json', 'w', encoding='utf-8') as fs:
+            with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
                 json.dump(itemZip, fs)
 
             itemZip = dict(zip(self.epoch,self.reward))
-            with open('results/reward_epoch.json', 'w', encoding='utf-8') as fs:
+            with open('reward_epoch.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
+
+            itemZip = dict(zip(self.epoch,self.fps))
+            with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
+
+            self.action = [tmp.tolist() for tmp in self.action]
+            itemZip = dict(zip(self.epoch,self.action))
+            with open('action.json', 'w', encoding='utf-8') as fs:
                 json.dump(itemZip, fs)
 
             plot_data(self.epoch, self.accuracy_epoch, title="accuracy_epoch")
             plot_data(self.epoch, self.reward, title="reward")
-            plot_data(self.step, self.accuracy, title="accuracy")
+            plot_data(self.epoch, self.fps, title="flops")
+            plot_data(self.epoch, self.action, title="action")
             print("accuracy ")
             print(np.mean(self.accuracy_epoch))
             print("reward ")
@@ -339,7 +358,7 @@ if __name__ == '__main__':
                       train=train)
 
     # for epoch
-    epoch = 10
+    epoch = 100
 
     # run main
     env.main(epoch=epoch)
