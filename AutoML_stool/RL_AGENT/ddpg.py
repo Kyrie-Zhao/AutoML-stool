@@ -16,11 +16,11 @@ class Ddpg(object):
         # Hyper parameter
         self.LR_A = 0.0001               # Learning rate for actor
         self.LR_C = 0.0001               # Learning rate for critic
-        self.GAMMA = 0.9                # Reward discount
-        self.TAU = 0.01                 # Soft replacement
-        self.MEMORY_CAPACITY = 10000     # Memory capacity
-        self.BATCH_SIZE = 64            # Learn batch size
-        self.DECREASE_RATE = 0.995     # Var Decrease rate
+        self.GAMMA = 0.9                  # Reward discount
+        self.TAU = 0.01                   # Soft replacement
+        self.MEMORY_CAPACITY = 10000      # Memory capacity
+        self.BATCH_SIZE = 64              # Learn batch size
+        self.DECREASE_RATE = 0.995        # Var Decrease rate
         self.MIN_VAR = 0.001              # Min explore var
 
         # Memory and pointer
@@ -177,41 +177,41 @@ class Ddpg(object):
             return tf.layers.dense(net, 1, trainable=trainable)
 
 
-if __name__ == '__main__':
-# when use:
-    # init hyper parameters
-    dis = 4
-    scal = 2
-    bound = [100, 10, 10]
-    s_dim = 2
-    var_scal=0.1
+# if __name__ == '__main__':
+# # when use:
+#     # init hyper parameters
+#     dis = 4
+#     scal = 2
+#     bound = [100, 10, 10]
+#     s_dim = 2
+#     var_scal=0.1
 
-    # state simulate
-    s__ = np.array([1, 2, 3])
+#     # state simulate
+#     s__ = np.array([1, 2, 3])
 
-    # init Ddpg class
-    dpg = Ddpg(dis, scal, s_dim, var_scal, bound)
+#     # init Ddpg class
+#     dpg = Ddpg(dis, scal, s_dim, var_scal, bound)
 
-    # time1
-    time_begin = time.time()
+#     # time1
+#     time_begin = time.time()
 
-    # choose action
-    action = dpg.choose_action(s__)
-    print(action)
+#     # choose action
+#     action = dpg.choose_action(s__)
+#     print(action)
 
-    # reward simulate
-    r = 1
+#     # reward simulate
+#     r = 1
 
-    # transition is [s__, action, r, s__]
-    # store transition
-    dpg.store_transition(s__, action, r, s__)
+#     # transition is [s__, action, r, s__]
+#     # store transition
+#     dpg.store_transition(s__, action, r, s__)
 
-    # learn if you want
-    dpg.learn()
+#     # learn if you want
+#     dpg.learn()
 
-    # total time
-    time_step = time.time() - time_begin
-    print(time_step)
+#     # total time
+#     time_step = time.time() - time_begin
+#     print(time_step)
 
 
 

@@ -1,27 +1,30 @@
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import warnings
+warnings.filterwarnings('ignore')
+
+import math 
+import argparse
 import time
-import psutil
 import pickle
 import numpy as np
 import tensorflow as tf
 import json
 from RL_AGENT.ddpg import Ddpg
 import matplotlib.pyplot as plt
-from MODEL.Client.solver import Solver
+from MODEL.solver import Solver
 
 class Environment(object):
     """
-     The Main Environment to connect solver with rl
+    The Main Environment to connect the trainer with the rl agent
     """
     def __init__(self, dis_dim, scal_dim, s_dim, scal_var, a_bound, s_bound, train=True):
         """
-        init solver and rl_model
+        init trainer and rl_agent
         :param train: Train rl or not
-        :param s_bound: State's boundary if s range is [[0-1],[0-9],[0-100]] then s_bound [0, 9, 100]
         :param solver: Solver class, which have .one_step
         :param rl_model: rl_model class, which have .choose_action, .store_transition and .learn
         """
-        # da or host 0 = host 1 = da
         self.update_RL = 1
         self.flag_DA = 0
         # init param for rl
@@ -32,29 +35,20 @@ class Environment(object):
         self.a_bound = a_bound
         self.s_bound = s_bound
         self.da_memory = []
-        # init train and bound
         self.train = train
-        # init power and late user constrain
-
-        # init solver and rl
         self.solver = Solver()
-        print("3")
         self.rl_model = Ddpg(self.dis_dim, self.scal_dim, self.s_dim, self.scal_var, self.a_bound)
-        print("Solver Loading")
 
         if (self.flag_DA == 1):
             da_extractedData = np.load('da.npy', allow_pickle=True).tolist()
             for i in range(0,len(da_extractedData)):
-                self.rl_model.store_transition(da_extractedData[i][0],da_extractedData[i][1],da_extractedData[i][2],da_extractedData[i][3])
+                self.rl_model.store_transition(da_extractedData[i][0], da_extractedData[i][1],
+                                               da_extractedData[i][2],da_extractedData[i][3])
             print("Restore Domain Adaptation Successfully!")
-        # 随机探索的步数
         self.random_step = 1
-        # 全局的step
         self.global_step = 0
         self.global_epoch = 0
-
         self.init_param_to_store()
-
 
     def init_param_to_store(self):
         self.step = []
@@ -78,23 +72,18 @@ class Environment(object):
 
         epoch = {
             "epoch": self.epoch,
-
             "accuracy": self.accuracy_epoch,
             "fps":self.fps_epoch,
             "reward": self.reward
         }
 
-
         all = {
             "step": step,
             "epoch": epoch
         }
-
         file = open("./data.pk", "wb")
         pickle.dump(all, file)
         file.close()
-
-
 
     def init_state(self):
         """
@@ -102,43 +91,24 @@ class Environment(object):
         Using mean of s_bound and std of normal generate s_bound
         """
         # calculate mean and std according to s_bound
-        print("init_state")
+        print("Initialize the state")
         mean = np.multiply(self.s_bound, 0.5)
         std = np.multiply(self.s_bound, 0.1)
         # generate normal
         state = np.random.normal(mean, std)
-        print(state)
-        print("state")
-
         return state
-
 
     def sigmoid(x):
         return 1/(1 + np.exp(-x))
 
     def calculate_p(self, acc, fps):
-        """
-        if acc < 0.3:
-            reward = -1
-        elif acc<0.4:
-            reward = -0.6
-        elif acc<0.5:
-            reward = -0.4
-        elif acc<0.6:
-            reward = 0
-        else:
-            reward = fps"""
         reward = -(1-acc)*fps
         return reward
-
-
-
+    
     def calculate_reward(self, state):
-        # state_dim = [acc, latency, power]
         acc, fps = state[0], state[1]
-        # calculate reward
         reward = self.calculate_p(acc, fps)
-
+        print(acc, fps, reward)
         return reward
 
     def take_action(self, action, late_rl):
@@ -148,44 +118,33 @@ class Environment(object):
             calculate_reward => a function mapping state to reward
 
         """
-        print("take_action")
-        # 全局step加1，用于标志数据收集
-        print("action")
-        print(action)
+        print('Take action:', action)
         self.global_epoch += 1
 
-        # init next_state, to_average_state
         next_state_to_average = []
         out_point_avg = []
 
         self.global_step += 1
 
-        #~~~~~~~~~~~``[acc,fps]
         next_state = self.solver.one_step(action)
-        next_state[1] = 275/next_state[1]
+        next_state[1] = math.log10(next_state[1])
         next_state.append(action[0])
         next_state.append(action[1])
         next_state.append(action[2])
         next_state.append(action[3])
-        print(next_state)
-        # 收集相关数据(step)
+        
         self.step.append(self.global_step)
-
         self.accuracy.append(next_state[0])
         self.fps.append(next_state[1])
 
-
-        # calculate reward
         reward = self.calculate_reward(next_state)
 
-        # 收集相关数据:
         self.epoch.append(self.global_epoch)
         self.accuracy_epoch.append(next_state[0])
         self.fps_epoch.append(next_state[1])
         self.reward.append(reward)
 
-        # 返回rl的观测数据
-        return np.array([next_state[0], next_state[1], next_state[2], next_state[3], next_state[4], next_state[5]]), reward
+        return np.array(next_state), reward
 
     def main(self, epoch):
         """
@@ -214,41 +173,31 @@ class Environment(object):
         x = []
         for i in range(epoch):
             print("EPOCH {} begins".format(i))
-            # rl记录时间
             late_rl = time.time()
-            # 随机探索
             if (i < self.random_step):
-
-                action = [0,0,0,0]
+                action = [16,16,16,16]
                 self.action.append(action)
                 """action = np.clip([np.random.rand() * self.a_bound[0],
                                   np.random.rand() * self.a_bound[1],
                                   np.random.rand() * self.a_bound[2],
                                   np.random.rand() * self.a_bound[3],np.zeros_like(self.a_bound), self.a_bound)"""
-            # 不随机探索
             else:
                 action_raw = self.rl_model.choose_action(state)
-                action = [ int(x) for x in action_raw ]
+                action = [int(x) for x in action_raw ]
                 self.action.append(action)
 
-
             late_rl = time.time() - late_rl
-            print("Action Choose")
-            print(action)
-            # take action according to the action, get reward and next_state
-            try:
-                next_state, reward = self.take_action(action, late_rl)
-                #print("next state values")
-                #print(next_state)
-            except Exception as e:
-                print(e)
-                break
+#             try:
+            next_state, reward = self.take_action(action, late_rl)
+#             except Exception as e:
+#                 print(e)
+#                 break
 
             print("STATE ACTION REWARD NEXT")
-            print(state)
-            print(action)
-            print(reward)
-            print(next_state)
+            print('Current State:', state)
+            print('Action:', action)
+            print('Reward:', reward)
+            print('Next State:', next_state)
             # store the transition to rl_model memory
             self.rl_model.store_transition(state, action, reward, next_state)
             # store the domain adaptation tragetary
@@ -259,21 +208,8 @@ class Environment(object):
             if self.train:
                 self.rl_model.learn()
                 if (i % 5 == 0):
-                    env.rl_model.save_model_checkpoint()
-                    print("Store RL")
-
-
-            # --optimal: print evaluate
-            print_eval = True
-            if print_eval:
-                # set up evaluation to print
-                to_print = "Epoch: {} |" \
-                           " State: {} |" \
-                           " Action: {} |" \
-                           " Reward: {} |" \
-                           " Next state: {} |".format(i, state, action, reward, next_state)
-                # print no new line or just print
-                print(to_print)
+                    self.rl_model.save_model_checkpoint()
+                    print("Save RL Model")
 
             state = next_state
 
@@ -291,12 +227,9 @@ class Environment(object):
                 # if save then save
                 if save:
                     plt.savefig('./{}.png'.format(title))
-
                 # show the fig
                 plt.show()
                 plt.close(0)
-
-
 
             itemZip = dict(zip(self.epoch,self.accuracy_epoch))
             with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
@@ -333,39 +266,37 @@ class Environment(object):
             #print(da_toFile)
             print("Store Domain Adaptation Successfully!")
 """
+def get_parser():
+    """
+    Creates an argument parser.
+    """
+    parser = argparse.ArgumentParser(description='AutoML for Stool Image Dataset')
+    # Training parameters
+    parser.add_argument('--cuda', default='1', type=str, help='CUDA visible devices')
+    parser.add_argument('--epoch', default='1', type=int, help='RL epochs')
+    return parser
 
-
-if __name__ == '__main__':
-    # when use:
-
-    #action[]
-
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
+    epoch = args.epoch
+    
     dis_dim = 0
-    #[Coarse position, fine position]
-    a_bound = [0,16, 16, 16, 16]
-    #bandwidth [FLOPS, ACC]
-    s_bound = [1, 1,16,16,16,16]
+    a_bound = [0, 16, 16, 16, 16]
+    s_bound = [1, 1,16,16,16,16] 
     scal_dim = np.shape(a_bound[1:])[0]
     s_dim = np.shape(s_bound)[0]
     scal_var = 0.1
-    #pow_u = 6.4
-    #late_u = 1
     train = True
 
-    # init env
-    env = Environment(dis_dim=dis_dim,
-                      scal_dim=scal_dim,
-                      s_dim=s_dim,
-                      scal_var=scal_var,
-                      a_bound=a_bound,
-                      s_bound=s_bound,
+    env = Environment(dis_dim=dis_dim, scal_dim=scal_dim, 
+                      s_dim=s_dim, scal_var=scal_var, 
+                      a_bound=a_bound, s_bound=s_bound,
                       train=train)
-
-    # for epoch
-    epoch = 20
-
-    # run main
     env.main(epoch=epoch)
-    #env.store_all()
     if train:
         env.rl_model.save_model_checkpoint()
+
+if __name__ == '__main__':
+    main()
