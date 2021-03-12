@@ -38,7 +38,7 @@ class Solver_Train(object):
         self.test_batch_size = 1
         self.lr = 0.001
         self.momentum = 0.9
-        self.epochs = 1
+        self.epochs = 20
         self.train_step = None
         self.test_step = None
         self.checkpoint_path = "./model_checkpoints"

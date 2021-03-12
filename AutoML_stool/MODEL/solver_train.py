@@ -34,12 +34,12 @@ class Solver_Train(object):
         self.input_h = 32
         self.input_c = 3
         # Training parameter
-        self.train_batch_size = 36
+        self.train_batch_size = 90
         self.test_batch_size = 1
         self.lr = 0.01
         self.momentum = 0.9
-        self.epochs_coarse = int(1 * (2278/self.train_batch_size*3))//100
-        self.epochs_fine = int(1 * (1299/self.train_batch_size*7))
+        self.epochs_coarse = int(2 * (2278/self.train_batch_size*3))
+        self.epochs_fine = int(2 * (1299/self.train_batch_size*7))
         self.epochs_test = 552 
         self.train_step = None
         self.test_step = None
@@ -219,6 +219,7 @@ class Solver_Train(object):
                     best_test_acc = coarse_test(action)
                     print("best accuracy:")
                     print(best_test_acc)"""
+        saver = tf.train.Saver()
         save_path = saver.save(sess, os.path.join(self.checkpoint_path, 'coarse.ckpt'))
         sess.close()
         print('End Training Coarse'.center(50, '-'))
@@ -392,6 +393,9 @@ class Solver_Train(object):
             label_list.append(y_c_test[0])
             pred_list.append(np.argmax(exit0_pred))
         balanced_accuracy = balanced_accuracy_score(label_list, pred_list)
+        print('Coarse Label with 0: ', label_list.count(0))
+        print('Coarse Label with 1: ', label_list.count(1))
+        print('Coarse Label with 2: ', label_list.count(2))
         print('Coarse Label: ', label_list)
         print('Coarse Prediction: ', pred_list)
         print("Coarse balanced accuracy:", balanced_accuracy)
@@ -606,10 +610,10 @@ class Solver_Train(object):
         return flops
 
     def train(self):
-        self.train_coarse(self.position)
+#         self.train_coarse(self.position)
+        balanced_accuracy = self.test_coarse(self.position)
 #         self.train_fine(self.position)
 #         accuracy, fine1_num, fine2_num, fine3_num = self.test(self.position)
-        balanced_accuracy = self.test_coarse(self.position)
 #         flops = self.flops_Cal(fine1_num, fine2_num, fine3_num,self.position)
 #         return [accuracy, flops]
 

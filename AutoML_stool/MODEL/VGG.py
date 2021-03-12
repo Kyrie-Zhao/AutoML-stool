@@ -118,7 +118,7 @@ class B_VGGNet(object):
             self.coarse = fc_layer(self.coarse, 4096,name='coarse_fc1')
             self.coarse = Relu(self.coarse,name='fc1_relu')
             self.coarse = Drop_out(self.coarse, 0.2, training=is_train)
-            logits_coarse = fc_layer(self.coarse, 3, name='coarse_fc2')
+            logits_coarse = fc_layer(self.coarse, 10, name='coarse_fc2')
 
         """with tf.variable_scope("coarse_pretrain"):
             #print(self.convertPosition[self.position[0]])
