@@ -5,32 +5,24 @@ warnings.filterwarnings('ignore')
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import balanced_accuracy_score
 import tensorflow as tf
 tf.reset_default_graph()
-tf.compat.v1.disable_eager_execution()
 from tensorflow.python.framework import graph_util
 from tensorflow.python.platform import gfile
 import tensorflow.contrib.eager as tfe
 
 import time
-
 import argparse
 import random
 import string
 import datetime
 import cv2
 
-from MODEL.Client.model_util.VGG import B_VGGNet
-from MODEL.Client.model_util.loss import *
-from MODEL.Client.model_util.utils import read_all_batches, read_val_data, write_pickle
-from MODEL.Client.model_util.misc import progress_bar
-
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-#from AlexNet import B_AlexNet
-#config = tf.compat.v1.ConfigProto()
-#config.gpu_options.allow_growth = True
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+from MODEL.VGG import B_VGGNet
+from MODEL.loss import *
+from MODEL.utils import read_all_batches, read_val_data
+from MODEL.augementation import *
+from MODEL.misc import progress_bar
 
 MAX_SIZE = 1299
 
@@ -39,9 +31,9 @@ class Solver_Train(object):
     def __init__(self, position=[0, 0, 0, 0]):
         #self.data_root = './data/cifar-10-python/cifar-10-batches-py'
         self.position = position
-        self.data_root = 'MODEL/Client/model_util/dataset_v4'
+        self.data_root = 'dataset_v4'
         #self.data_root = './dataset_v4'
-        self.num_class = 10
+        self.num_class = 3
         self.input_w = 32
         self.input_h = 32
         self.input_c = 3
@@ -189,7 +181,7 @@ class Solver_Train(object):
         variables_to_resotre = [v for v in variables_to_resotre if 'fine' not in v.name.split('/')[0]]
         print(variables_to_resotre)
         saver = tf.train.Saver(variables_to_resotre)
-        saver.restore(sess, os.path.join(self.checkpoint_path, 'coarse.ckpt'))
+        saver.restore(sess, os.path.join(self.checkpoint_path, 'pre_train.ckpt'))
 
         # Construct saver
         #saver = tf.train.Saver()
