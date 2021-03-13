@@ -53,7 +53,7 @@ class StoolDataset(Dataset):
 def train_corse(device, net, epochs, batch_size, lr, reg, log_every_n=100, 
                 log_path = 'model_checkpoints', model_name = 'coarse'):
     transform_train = transforms.Compose([
-        transforms.Resize((112, 112)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -64,14 +64,13 @@ def train_corse(device, net, epochs, batch_size, lr, reg, log_every_n=100,
     _, sample_counts = np.unique(label_con, return_counts = True)
     num_class = len(sample_counts)
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.875, weight_decay=reg, nesterov=False)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1, 3, 5], gamma=0.1)
     criterion = nn.CrossEntropyLoss()
     best_bacc = 0  
     global_steps = 0
     start = time.time()
-    for epoch in range(1, epochs+1):
-        if epoch%2 == 0:
-            lr = lr/10
-        print('\nEpoch: %d' % epoch)
+    for epoch in range(epochs):
+        print('\nEpoch: %d, with learning rate: %.5f' % (epoch, optimizer.param_groups[0]['lr']))
         train_loss = 0        
         correct = 0
         total = 0
@@ -99,10 +98,11 @@ def train_corse(device, net, epochs, batch_size, lr, reg, log_every_n=100,
                     print("Saving...")
                     torch.save(net.state_dict(), os.path.join(log_path, model_name))
                 start = time.time()
+        scheduler.step()
         
 def test_corse(device, net, batch_size):
     transform_test = transforms.Compose([
-        transforms.Resize((112, 112)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -129,14 +129,13 @@ def test_corse(device, net, batch_size):
     print("Test acc=%.4f, Test balanced accuracy=%.4f" % (acc, bacc))
     return bacc, acc, y_true, y_output, y_pred
 
-def train_fine(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions, condition, 
-               epochs, batch_size, lr, reg, log_every_n=100, log_path = 'model_checkpoints', model_name = 'fine'):
+def train_fine(device, net_coarse, net_fine, position, condition, epochs, batch_size, lr, reg, log_every_n=100, 
+                log_path = 'model_checkpoints', model_name = 'fine'):
     transform_train = transforms.Compose([
-        transforms.Resize((112, 112)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    
     trainset = StoolDataset(csv_file = 'train_a_b_annotation.csv', root_dir = 'dataset_v4', transform = transform_train)
     trainloader = DataLoader(trainset, sampler = BalancedBatchSampler(trainset, trainset.bristol_label), 
                              batch_size = batch_size, num_workers=2)
@@ -144,14 +143,13 @@ def train_fine(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions
                  trainset.condition_label[idx]==condition]
     _, sample_counts = np.unique(label_con, return_counts = True)
     num_class = len(sample_counts) 
-    net = torchvision.models.mobilenet_v2(pretrained=True)
-    
     optimizer = optim.SGD(net_fine.parameters(), lr=lr, momentum=0.875, weight_decay=reg, nesterov=False)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4], gamma=0.1)
     best_bacc = 0  
     global_steps = 0
     start = time.time()
-    for epoch in range(1, epochs+1):
-        print('\nEpoch: %d' % epoch)
+    for epoch in range(epochs):
+        print('\nEpoch: %d, with learning rate: %.5f' % (epoch, optimizer.param_groups[0]['lr']))
         net_coarse.eval()
         train_loss = 0
         correct = 0
@@ -164,7 +162,6 @@ def train_fine(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions
             optimizer.zero_grad()
             modules = list(net_coarse.features.children())
             modules = modules[:position+1]
-            
             extracter = nn.Sequential(*modules)
             features = extracter(inputs) 
             outputs = net_fine(features)
@@ -187,10 +184,12 @@ def train_fine(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions
                     best_bacc = bacc
                     print("Saving...")
                     torch.save(net_fine.state_dict(), os.path.join(log_path, model_name))
+        scheduler.step()
+
             
 def test_fine(device, net_coarse, net_fine, position, batch_size, condition):
     transform_test = transforms.Compose([
-        transforms.Resize((112, 112)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -224,7 +223,7 @@ def test_fine(device, net_coarse, net_fine, position, batch_size, condition):
 
 def test_full(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions, batch_size):
     transform_test = transforms.Compose([
-        transforms.Resize((112, 112)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
