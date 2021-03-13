@@ -12,7 +12,7 @@ import tensorflow as tf
 import json
 from RL_AGENT.ddpg import Ddpg
 import matplotlib.pyplot as plt
-from MODEL.solver import Solver
+from MODEL.trainer import *
 
 class Environment(object):
     """
@@ -36,7 +36,7 @@ class Environment(object):
         self.s_bound = s_bound
         self.da_memory = []
         self.train = train
-        self.solver = Solver()
+        self.trainer = Trainer()
         self.rl_model = Ddpg(self.dis_dim, self.scal_dim, self.s_dim, self.scal_var, self.a_bound)
 
         if (self.flag_DA == 1):
@@ -59,7 +59,6 @@ class Environment(object):
         self.accuracy_epoch = []
         self.fps_epoch = []
         self.reward = []
-        # config:
         return
 
     def store_all(self):
@@ -123,10 +122,8 @@ class Environment(object):
 
         next_state_to_average = []
         out_point_avg = []
-
         self.global_step += 1
-
-        next_state = self.solver.one_step(action)
+        next_state = self.trainer.train(action)
         next_state[1] = math.log10(next_state[1])
         next_state.append(action[0])
         next_state.append(action[1])
@@ -162,36 +159,30 @@ class Environment(object):
                    Do Solver.one_step() for i round
                 Train the rl with memory set using rl_model.learn
         """
-        # init state at first
-        # 3BEI INTERVAL
 
         state = self.init_state()
-        print("State NOrmalization")
-        # 初始化随机探索用到的开关
+        print("State Normalization")
         once = True
-        # 初始化用来记录步数的i
         x = []
         for i in range(epoch):
             print("EPOCH {} begins".format(i))
             late_rl = time.time()
             if (i < self.random_step):
-                action = [16,16,16,16]
+                action = [18, 18, 18, 18]
                 self.action.append(action)
-                """action = np.clip([np.random.rand() * self.a_bound[0],
-                                  np.random.rand() * self.a_bound[1],
-                                  np.random.rand() * self.a_bound[2],
-                                  np.random.rand() * self.a_bound[3],np.zeros_like(self.a_bound), self.a_bound)"""
             else:
                 action_raw = self.rl_model.choose_action(state)
-                action = [int(x) for x in action_raw ]
+                action = []
+                for x in action_raw:
+                    if x > action_raw[0]:
+                        action.append(int(action_raw[0]))
+                    else:
+                        action.append(int(x))
+#                 action = [int(x) for x in action_raw ]
                 self.action.append(action)
 
             late_rl = time.time() - late_rl
-#             try:
             next_state, reward = self.take_action(action, late_rl)
-#             except Exception as e:
-#                 print(e)
-#                 break
 
             print("STATE ACTION REWARD NEXT")
             print('Current State:', state)
@@ -204,7 +195,6 @@ class Environment(object):
             if(self.update_RL == 1):
                 self.da_memory.append([state,action,reward,next_state])
 
-            # if train then train rl
             if self.train:
                 self.rl_model.learn()
                 if (i % 5 == 0):
@@ -213,59 +203,23 @@ class Environment(object):
 
             state = next_state
 
-        # --optional: plot the param
-        plot = True
-        if plot:
-            def plot_data(x_data, y_data, title=' ', x_label=' ', y_label=' ', save=False):
-                # new figure
-                plt.figure()
-                # plot, set x, y label and title
-                plt.plot(x_data, y_data)
-                plt.title(title)
-                plt.xlabel(x_label)
-                plt.ylabel(y_label)
-                # if save then save
-                if save:
-                    plt.savefig('./{}.png'.format(title))
-                # show the fig
-                plt.show()
-                plt.close(0)
+        itemZip = dict(zip(self.epoch,self.accuracy_epoch))
+        with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
+            json.dump(itemZip, fs)
 
-            itemZip = dict(zip(self.epoch,self.accuracy_epoch))
-            with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
-                json.dump(itemZip, fs)
+        itemZip = dict(zip(self.epoch,self.reward))
+        with open('reward_epoch.json', 'w', encoding='utf-8') as fs:
+            json.dump(itemZip, fs)
 
-            itemZip = dict(zip(self.epoch,self.reward))
-            with open('reward_epoch.json', 'w', encoding='utf-8') as fs:
-                json.dump(itemZip, fs)
+        itemZip = dict(zip(self.epoch,self.fps))
+        with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
+            json.dump(itemZip, fs)
 
-            itemZip = dict(zip(self.epoch,self.fps))
-            with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
-                json.dump(itemZip, fs)
+        #self.action = [tmp.tolist() for tmp in self.action]
+        itemZip = dict(zip(self.epoch,self.action))
+        with open('action.json', 'w', encoding='utf-8') as fs:
+            json.dump(itemZip, fs)
 
-            #self.action = [tmp.tolist() for tmp in self.action]
-            itemZip = dict(zip(self.epoch,self.action))
-            with open('action.json', 'w', encoding='utf-8') as fs:
-                json.dump(itemZip, fs)
-                """
-
-            plot_data(self.epoch, self.accuracy_epoch, title="accuracy_epoch")
-            plot_data(self.epoch, self.reward, title="reward")
-            plot_data(self.epoch, self.fps, title="flops")
-            plot_data(self.epoch, self.action, title="action")
-            print("accuracy ")
-            print(np.mean(self.accuracy_epoch))
-            print("reward ")
-            print(np.mean(self.reward))
-
-
-            #Save DA data to file
-            if(self.update_RL == 1):
-                da_toFile = np.array(self.da_memory)
-                np.save('da.npy',da_toFile )
-            #print(da_toFile)
-            print("Store Domain Adaptation Successfully!")
-"""
 def get_parser():
     """
     Creates an argument parser.
@@ -279,12 +233,12 @@ def get_parser():
 def main():
     parser = get_parser()
     args = parser.parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
+#     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
     epoch = args.epoch
     
     dis_dim = 0
-    a_bound = [0, 16, 16, 16, 16]
-    s_bound = [1, 1,16,16,16,16] 
+    a_bound = [0, 18, 18, 18, 18]
+    s_bound = [1, 1, 18, 18, 18, 18] 
     scal_dim = np.shape(a_bound[1:])[0]
     s_dim = np.shape(s_bound)[0]
     scal_var = 0.1
