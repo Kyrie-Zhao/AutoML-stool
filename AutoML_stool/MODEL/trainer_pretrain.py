@@ -43,7 +43,7 @@ class Trainer(object):
         self.lr_coarse = 0.01
         self.lr_fine = 0.001
         self.reg = 1e-5
-        self.log_every_n = 50
+        self.log_every_n = 1000
         self.num_features = [32, 16, 24, 24, 32, 32, 32, 64, 64, 64, 64,
                               96, 96, 96, 160, 160, 160, 320, 1280]
         self.Flops = [10.84, 20.87, 50.08, 75.82, 91.29, 102.28, 113.27, 120.84, 131.16, 

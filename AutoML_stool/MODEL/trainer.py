@@ -39,9 +39,9 @@ class Trainer(object):
         self.device = device
         self.epochs_coarse = 2
         self.epochs_fine = 1
-        self.batch_size = 28
-        self.lr_coarse = 0.01
-        self.lr_fine = 0.01
+        self.batch_size = 42
+        self.lr_coarse = 0.1
+        self.lr_fine = 0.1
         self.reg = 1e-5
         self.log_every_n = 50
         self.num_features = [32, 16, 24, 24, 32, 32, 32, 64, 64, 64, 64,
@@ -63,25 +63,27 @@ class Trainer(object):
         net_fine_1 = Net(num_classes=3, num_features = self.num_features[positions[2]]).to(self.device)
         net_fine_2 = Net(num_classes=2, num_features = self.num_features[positions[3]]).to(self.device)
                 
-        train_coarse(self.device, net_base, net_coarse, positions[0], 
-                    self.epochs_coarse, self.batch_size, self.lr_coarse, self.reg, 
-                    self.log_every_n, self.log_path, model_name = 'coarse')
-        
-        train_fine(self.device, net_base, net_fine_0, positions[1], 0, self.epochs_fine, self.batch_size, 
-                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine0')
-        train_fine(self.device, net_base, net_fine_1, positions[2], 1, self.epochs_fine, self.batch_size, 
-                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine1')
-        train_fine(self.device, net_base, net_fine_2, positions[3], 2, self.epochs_fine, self.batch_size, 
-                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine2')
-        
-        net_coarse.load_state_dict(torch.load(os.path.join(self.log_path, 'coarse')))
-        net_fine_0.load_state_dict(torch.load(os.path.join(self.log_path, 'fine0')))
-        net_fine_1.load_state_dict(torch.load(os.path.join(self.log_path, 'fine1')))
-        net_fine_2.load_state_dict(torch.load(os.path.join(self.log_path, 'fine2')))
-        
-        bacc, acc, y_pred_a, y_true_a = test_full(self.device, net_base, net_coarse, net_fine_0, 
-                                                  net_fine_1, net_fine_2, positions, self.batch_size)
-        
+        bacc_coarse = train_coarse(self.device, net_base, net_coarse, positions[0], 
+                                   self.epochs_coarse, self.batch_size, self.lr_coarse, self.reg, 
+                                   self.log_every_n, self.log_path, model_name = 'test')
+        if bacc_coarse < 0.4:
+            bacc = 0.14
+        else:
+            train_fine(self.device, net_base, net_fine_0, positions[1], 0, self.epochs_fine, self.batch_size, 
+                       self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'test0')
+            train_fine(self.device, net_base, net_fine_1, positions[2], 1, self.epochs_fine, self.batch_size, 
+                       self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'test1')
+            train_fine(self.device, net_base, net_fine_2, positions[3], 2, self.epochs_fine, self.batch_size, 
+                       self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'test2')
+
+            net_coarse.load_state_dict(torch.load(os.path.join(self.log_path, 'test')))
+            net_fine_0.load_state_dict(torch.load(os.path.join(self.log_path, 'test0')))
+            net_fine_1.load_state_dict(torch.load(os.path.join(self.log_path, 'test1')))
+            net_fine_2.load_state_dict(torch.load(os.path.join(self.log_path, 'test2')))
+
+            bacc, acc, y_pred_a, y_true_a = test_full(self.device, net_base, net_coarse, net_fine_0, 
+                                                      net_fine_1, net_fine_2, positions, self.batch_size)
+            
         flops = self.Flops[positions[0]]*(51+2278+394)
         for i in range(1, len(positions)):
             if positions[i] > positions[0]:
@@ -103,7 +105,7 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     trainer = Trainer(device=torch.device('cuda:'+args.cuda))
-    trainer.train([0, 0, 0, 0])
+    trainer.train([12, 15, 15, 15])
     
 if __name__ == '__main__':
     main()

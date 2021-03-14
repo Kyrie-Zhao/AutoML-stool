@@ -19,14 +19,18 @@ from sklearn.metrics import balanced_accuracy_score, accuracy_score
 class Net(nn.Module):
     def __init__(self, num_classes=3, num_features = 512):
         super(Net, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(num_features, 320, 1, 2),
+            nn.ReLU(inplace=True),
+        )
         self.classifier = nn.Sequential(
-            
-            nn.Linear(num_features, num_classes, bias=True),
+            nn.Linear(320, num_classes, bias=True),
         )
     def forward(self, x):
-        x = nn.functional.adaptive_avg_pool2d(x, (1, 1))
-        x = torch.flatten(x, 1)
-        out = self.classifier(x)
+        out = self.features(x)
+        out = nn.functional.adaptive_avg_pool2d(out, (1, 1))
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
         return out
     
 class StoolDataset(Dataset):
@@ -106,6 +110,7 @@ def train_coarse(device, net_base, net_coarse, position, epochs, batch_size, lr,
                     print("Saving...")
                     torch.save(net_coarse.state_dict(), os.path.join(log_path, model_name))
         scheduler.step()
+    return best_bacc
         
 def test_coarse(device, net_base, net_coarse, position, batch_size):
     transform_test = transforms.Compose([
@@ -154,7 +159,7 @@ def train_fine(device, net_base, net_fine, position, condition, epochs, batch_si
     _, sample_counts = np.unique(label_con, return_counts = True)
     num_class = len(sample_counts) 
     optimizer = optim.SGD(net_fine.parameters(), lr=lr, momentum=0.875, weight_decay=reg, nesterov=False)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4], gamma=0.1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1, 3, 5], gamma=0.1)
     best_bacc = 0  
     global_steps = 0
     start = time.time()

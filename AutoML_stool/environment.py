@@ -101,7 +101,10 @@ class Environment(object):
         return 1/(1 + np.exp(-x))
 
     def calculate_p(self, acc, fps):
-        reward = -(1-acc)*fps
+        if acc < 0.25:
+            reward = -2.5
+        else:
+            reward = -(1-acc)*fps
         return reward
     
     def calculate_reward(self, state):
