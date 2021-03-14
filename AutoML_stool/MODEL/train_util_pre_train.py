@@ -20,7 +20,6 @@ class Net(nn.Module):
     def __init__(self, num_classes=3, num_features = 512):
         super(Net, self).__init__()
         self.classifier = nn.Sequential(
-            
             nn.Linear(num_features, num_classes, bias=True),
         )
     def forward(self, x):
@@ -51,8 +50,8 @@ class StoolDataset(Dataset):
             image = self.transform(image)
         return (image, bristol_label, condition_label, brsitol_on_condition_label)
 
-def train_coarse(device, net_base, net_coarse, position, epochs, batch_size, lr, reg, log_every_n=100, 
-                 log_path = 'model_checkpoints', model_name = 'coarse'):
+def train_corse(device, net, epochs, batch_size, lr, reg, log_every_n=100, 
+                log_path = 'model_checkpoints', model_name = 'coarse'):
     transform_train = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -60,86 +59,77 @@ def train_coarse(device, net_base, net_coarse, position, epochs, batch_size, lr,
     ])
     trainset = StoolDataset(csv_file = 'train_a_b_annotation.csv', root_dir = 'dataset_v4', transform = transform_train)
     trainloader = DataLoader(trainset, sampler = BalancedBatchSampler(trainset, trainset.condition_label), 
-                             batch_size = batch_size, num_workers=2)    
-    _, sample_counts = np.unique(trainset.condition_label, return_counts = True)
+                             batch_size = batch_size, num_workers=2)
+    label_con = trainset.condition_label  
+    _, sample_counts = np.unique(label_con, return_counts = True)
     num_class = len(sample_counts)
-    
-    optimizer = optim.SGD(net_coarse.parameters(), lr=lr, momentum=0.875, weight_decay=reg, nesterov=False)
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.875, weight_decay=reg, nesterov=False)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1, 3, 5], gamma=0.1)
+    criterion = nn.CrossEntropyLoss()
     best_bacc = 0  
     global_steps = 0
     start = time.time()
     for epoch in range(epochs):
         print('\nEpoch: %d, with learning rate: %.5f' % (epoch, optimizer.param_groups[0]['lr']))
-        net_base.eval()
-        train_loss = 0
+        train_loss = 0        
         correct = 0
         total = 0
-        for batch_idx, (inputs, _, con_labels, brsitol_con_label) in enumerate(trainloader):
-            net_coarse.train()
-            inputs, con_labels = inputs.to(device), con_labels.to(device)
+        for batch_idx, (inputs, bristol_label, condition_label, brsitol_on_condition_label) in enumerate(trainloader):
+            net.train()
+            inputs, condition_label = inputs.to(device), condition_label.to(device)
             optimizer.zero_grad()
-            modules = list(net_base.features.children())
-            modules = modules[:position+1]
-            extracter = nn.Sequential(*modules)
-            for p in extracter.parameters():
-                p.requires_grad = False
-            features = extracter(inputs) 
-            outputs = net_coarse(features)
-            loss = CB_loss(device, con_labels, outputs, sample_counts, num_class, 'softmax', 0.9999, 2.0)
+            condition_outputs = net(inputs)
+            loss = CB_loss(device, condition_label, condition_outputs, sample_counts, num_class, 'softmax', 0.9999, 2.0)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += con_labels.size(0)
-            correct += predicted.eq(con_labels).sum().item()
+            _, condition_predicted = condition_outputs.max(1)
+            total += condition_label.size(0)
+            correct += condition_predicted.eq(condition_label).sum().item()
             global_steps += 1
             if global_steps % log_every_n == 0:
                 end = time.time()
                 num_examples_per_second = log_every_n * batch_size / (end - start)
                 print("[Step=%d]\tLoss=%.4f\tacc=%.4f\t%.1f examples/second"
                       % (global_steps, train_loss / (batch_idx + 1), (correct / total), num_examples_per_second))
-                start = time.time()
-                bacc, acc = test_coarse(device, net_base, net_coarse, position, batch_size)
+                bacc, acc, _, _ , _ = test_corse(device, net, batch_size)
                 if bacc > best_bacc:
                     best_bacc = bacc
                     print("Saving...")
-                    torch.save(net_coarse.state_dict(), os.path.join(log_path, model_name))
+                    torch.save(net.state_dict(), os.path.join(log_path, model_name))
+                start = time.time()
         scheduler.step()
         
-def test_coarse(device, net_base, net_coarse, position, batch_size):
+def test_corse(device, net, batch_size):
     transform_test = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    
     testset = StoolDataset(csv_file = 'test_a_annotation.csv', 
                            root_dir = 'dataset_v4', transform = transform_test)
     testloader = DataLoader(testset, batch_size = batch_size, num_workers = 2)
-    net_base.eval()
-    net_coarse.eval()
+    net.eval()
     test_loss = 0     
     y_pred = []
     y_true = []
+    list_outputs = []
     with torch.no_grad():
-        for batch_idx, (inputs, _, con_labels, brsitol_con_label) in enumerate(testloader):
-            inputs, con_labels = inputs.to(device), con_labels.to(device); 
-            modules = list(net_base.features.children())
-            modules = modules[:position+1]
-            extracter = nn.Sequential(*modules)
-            features = extracter(inputs) 
-            outputs = net_coarse(features)
-            _, predicted = outputs.max(1)
-            y_pred = y_pred + predicted.tolist()
-            y_true = y_true + con_labels.tolist()
+        for batch_idx,(inputs, bristol_label, condition_label, brsitol_on_condition_label) in enumerate(testloader):
+            inputs, condition_label = inputs.to(device), condition_label.to(device)  
+            condition_outputs = net(inputs)
+            list_outputs.append(condition_outputs.cpu().detach().numpy())
+            _, condition_predicted = condition_outputs.max(1)
+            y_pred = y_pred + condition_predicted.tolist()
+            y_true = y_true + condition_label.tolist()
+    y_output = np.concatenate(list_outputs, axis=0)
+    num_val_steps = len(testloader)
     bacc = balanced_accuracy_score(y_true, y_pred)
     acc = accuracy_score(y_true, y_pred)
-    print("Test Coarae: acc=%.4f\tbalanced accuracy=%.4f" % (acc, bacc))
-    return bacc, acc
+    print("Test acc=%.4f, Test balanced accuracy=%.4f" % (acc, bacc))
+    return bacc, acc, y_true, y_output, y_pred
 
-
-def train_fine(device, net_base, net_fine, position, condition, epochs, batch_size, lr, reg, log_every_n=100, 
+def train_fine(device, net_coarse, net_fine, position, condition, epochs, batch_size, lr, reg, log_every_n=100, 
                 log_path = 'model_checkpoints', model_name = 'fine'):
     transform_train = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -160,7 +150,7 @@ def train_fine(device, net_base, net_fine, position, condition, epochs, batch_si
     start = time.time()
     for epoch in range(epochs):
         print('\nEpoch: %d, with learning rate: %.5f' % (epoch, optimizer.param_groups[0]['lr']))
-        net_base.eval()
+        net_coarse.eval()
         train_loss = 0
         correct = 0
         total = 0
@@ -170,11 +160,9 @@ def train_fine(device, net_base, net_fine, position, condition, epochs, batch_si
             brsitol_con_label = brsitol_con_label.to(device)
             inputs, labels = inputs[con_label==condition], brsitol_con_label[con_label==condition]
             optimizer.zero_grad()
-            modules = list(net_base.features.children())
+            modules = list(net_coarse.features.children())
             modules = modules[:position+1]
             extracter = nn.Sequential(*modules)
-            for p in extracter.parameters():
-                p.requires_grad = False
             features = extracter(inputs) 
             outputs = net_fine(features)
             loss = CB_loss(device, labels, outputs, sample_counts, num_class, 'softmax', 0.9999, 2.0)
@@ -191,7 +179,7 @@ def train_fine(device, net_base, net_fine, position, condition, epochs, batch_si
                 print("[Step=%d]\tLoss=%.4f\tacc=%.4f\t%.1f examples/second"
                       % (global_steps, train_loss / (batch_idx + 1), (correct / total), num_examples_per_second))
                 start = time.time()
-                bacc, acc = test_fine(device, net_base, net_fine, position, batch_size, condition)
+                bacc, acc = test_fine(device, net_coarse, net_fine, position, batch_size, condition)
                 if bacc > best_bacc:
                     best_bacc = bacc
                     print("Saving...")
@@ -199,7 +187,7 @@ def train_fine(device, net_base, net_fine, position, condition, epochs, batch_si
         scheduler.step()
 
             
-def test_fine(device, net_base, net_fine, position, batch_size, condition):
+def test_fine(device, net_coarse, net_fine, position, batch_size, condition):
     transform_test = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -208,7 +196,7 @@ def test_fine(device, net_base, net_fine, position, batch_size, condition):
     testset = StoolDataset(csv_file = 'test_a_annotation.csv', 
                            root_dir = 'dataset_v4', transform = transform_test)
     testloader = DataLoader(testset, batch_size = batch_size, num_workers = 2)
-    net_base.eval()
+    net_coarse.eval()
     net_fine.eval()
     test_loss = 0     
     y_pred = []
@@ -220,7 +208,7 @@ def test_fine(device, net_base, net_fine, position, batch_size, condition):
             inputs, labels = inputs[con_label==condition], brsitol_con_label[con_label==condition]
             if len(labels) == 0:
                 continue
-            modules = list(net_base.features.children())
+            modules = list(net_coarse.features.children())
             modules = modules[:position+1]
             extracter = nn.Sequential(*modules)
             features = extracter(inputs) 
@@ -233,7 +221,7 @@ def test_fine(device, net_base, net_fine, position, batch_size, condition):
     print("Test acc=%.4f, Test balanced accuracy=%.4f" % (acc, bacc))
     return bacc, acc
 
-def test_full(device, net_base, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions, batch_size):
+def test_full(device, net_coarse, net_fine_0, net_fine_1, net_fine_2, positions, batch_size):
     transform_test = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -242,7 +230,7 @@ def test_full(device, net_base, net_coarse, net_fine_0, net_fine_1, net_fine_2, 
     testset = StoolDataset(csv_file = 'test_a_annotation.csv', 
                            root_dir = 'dataset_v4', transform = transform_test)
     testloader = DataLoader(testset, batch_size = batch_size, num_workers = 2)
-    net_base.eval()
+    net_coarse.eval()
     net_fine_0.eval()
     net_fine_1.eval()
     net_fine_2.eval()
@@ -251,27 +239,16 @@ def test_full(device, net_base, net_coarse, net_fine_0, net_fine_1, net_fine_2, 
     with torch.no_grad():
         for batch_idx, (inputs, brsitol_label, _, _) in enumerate(testloader):
             inputs, brsitol_label = inputs.to(device), brsitol_label.to(device); 
-            modules = list(net_base.features.children())
-            modules_coarse = modules[:positions[0]+1]
-            extracter_coarse = nn.Sequential(*modules_coarse)
-            for p in extracter_coarse.parameters():
-                p.requires_grad = False
-            features_coarse = extracter_coarse(inputs)
-            outputs_coarse = net_coarse(features_coarse)
+            outputs_coarse = net_coarse(inputs)
             _, predicted_coarse = outputs_coarse.max(1)
-            
             predicted_fine = torch.empty(brsitol_label.size(), dtype = torch.long, device = device)
+            modules = list(net_coarse.features.children())
             modules_0 = modules[:positions[1]+1]
-            extracter_0 = nn.Sequential(*modules_0)
-            features_0 = extracter_0(inputs[predicted_coarse == 0]) 
-            
+            features_0 = nn.Sequential(*modules_0)(inputs[predicted_coarse == 0]) 
             modules_1 = modules[:positions[2]+1]
-            extracter_1 = nn.Sequential(*modules_1)
-            features_1 = extracter_1(inputs[predicted_coarse == 1]) 
-            
+            features_1 = nn.Sequential(*modules_1)(inputs[predicted_coarse == 1]) 
             modules_2 = modules[:positions[3]+1]
-            extracter_2 = nn.Sequential(*modules_2)
-            features_2 = extracter_2(inputs[predicted_coarse == 2]) 
+            features_2 = nn.Sequential(*modules_2)(inputs[predicted_coarse == 2]) 
 
             if len(features_0) != 0:
                 outputs_fine_0 = net_fine_0(features_0)

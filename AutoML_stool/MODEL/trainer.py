@@ -18,7 +18,7 @@ from PIL import Image
 from sklearn.metrics import balanced_accuracy_score, accuracy_score
 
 import os
-from MODEL.train_util import train_corse, test_corse, train_fine, test_fine, test_full, StoolDataset
+from MODEL.train_util import train_coarse, test_coarse, train_fine, test_fine, test_full, StoolDataset
 from MODEL.train_util import Net
 from MODEL.evaluate_util import plot_confusion_matrix
 import numpy as np
@@ -37,54 +37,58 @@ class Trainer(object):
         self.data_root = 'dataset_v4'
         self.log_path = 'model_checkpoints'
         self.device = device
-        self.epochs_coarse = 6
-        self.epochs_fine = 4
+        self.epochs_coarse = 2
+        self.epochs_fine = 1
         self.batch_size = 28
         self.lr_coarse = 0.01
-        self.lr_fine = 0.001
+        self.lr_fine = 0.01
         self.reg = 1e-5
         self.log_every_n = 50
         self.num_features = [32, 16, 24, 24, 32, 32, 32, 64, 64, 64, 64,
                               96, 96, 96, 160, 160, 160, 320, 1280]
         self.Flops = [10.84, 20.87, 50.08, 75.82, 91.29, 102.28, 113.27, 120.84, 131.16, 
                       141.48, 151.8, 164.53, 187.23, 209.93, 225.54, 241.02, 256.5, 279.5, 299.57, 300.85]
+        self.num_train = [51, 2278, 394]
                 
     def train(self, positions):
         print('Current positions:', positions)
         start_time = time.time()
-        net = torchvision.models.mobilenet_v2(pretrained=True)
-#         net.load_state_dict(torch.load(os.path.join(self.log_path, 'coarse_pre_train')))
-        modules = list(net.features.children())
-        modules = modules[:positions[0]+1]
-        extracter = nn.Sequential(*modules)
-        net.features = extracter
-        net.classifier = torch.nn.Linear(self.num_features[positions[0]], out_features=3)
-        net = net.to(self.device)
-        train_corse(self.device, net, self.epochs_coarse, self.batch_size, self.lr_coarse, self.reg, 
-                    self.log_every_n, self.log_path, model_name = 'coarse_pre_train')
+        net_base = torchvision.models.mobilenet_v2(pretrained=True)
+        net_base.classifier = torch.nn.Linear(self.num_features[-1], out_features=3)
+        net_base.load_state_dict(torch.load(os.path.join(self.log_path, 'coarse_pre_train')))
+        net_base = net_base.to(self.device)
         
-        net_constipation = Net(num_classes=2, num_features = self.num_features[positions[1]]).to(self.device)
-        net_normal = Net(num_classes=3, num_features = self.num_features[positions[2]]).to(self.device)
-        net_loose = Net(num_classes=2, num_features = self.num_features[positions[3]]).to(self.device)
-                    
-        net.load_state_dict(torch.load(os.path.join(self.log_path, 'coarse_pre_train')))
+        net_coarse = Net(num_classes=3, num_features = self.num_features[positions[0]]).to(self.device)
+        net_fine_0 = Net(num_classes=2, num_features = self.num_features[positions[1]]).to(self.device)
+        net_fine_1 = Net(num_classes=3, num_features = self.num_features[positions[2]]).to(self.device)
+        net_fine_2 = Net(num_classes=2, num_features = self.num_features[positions[3]]).to(self.device)
+                
+        train_coarse(self.device, net_base, net_coarse, positions[0], 
+                    self.epochs_coarse, self.batch_size, self.lr_coarse, self.reg, 
+                    self.log_every_n, self.log_path, model_name = 'coarse')
         
-        train_fine(self.device, net, net_constipation, positions[1], 0, self.epochs_fine, self.batch_size, 
-                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine0_pre_train')
-        train_fine(self.device, net, net_normal, positions[2], 1, self.epochs_fine, self.batch_size, self.lr_fine, self.reg, 
-                   self.log_every_n, self.log_path, model_name = 'fine1_pre_train')
-        train_fine(self.device, net, net_loose, positions[3], 2, self.epochs_fine, self.batch_size, self.lr_fine, self.reg, 
-                   self.log_every_n, self.log_path, model_name = 'fine2_pre_train')
+        train_fine(self.device, net_base, net_fine_0, positions[1], 0, self.epochs_fine, self.batch_size, 
+                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine0')
+        train_fine(self.device, net_base, net_fine_1, positions[2], 1, self.epochs_fine, self.batch_size, 
+                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine1')
+        train_fine(self.device, net_base, net_fine_2, positions[3], 2, self.epochs_fine, self.batch_size, 
+                   self.lr_fine, self.reg, self.log_every_n, self.log_path, model_name = 'fine2')
         
-        net_constipation.load_state_dict(torch.load(os.path.join(self.log_path, 'fine0_pre_train')))
-        net_normal.load_state_dict(torch.load(os.path.join(self.log_path, 'fine1_pre_train')))
-        net_loose.load_state_dict(torch.load(os.path.join(self.log_path, 'fine2_pre_train')))
+        net_coarse.load_state_dict(torch.load(os.path.join(self.log_path, 'coarse')))
+        net_fine_0.load_state_dict(torch.load(os.path.join(self.log_path, 'fine0')))
+        net_fine_1.load_state_dict(torch.load(os.path.join(self.log_path, 'fine1')))
+        net_fine_2.load_state_dict(torch.load(os.path.join(self.log_path, 'fine2')))
         
-        bacc, acc, y_pred_a, y_true_a = test_full(self.device, net, net_constipation, 
-                                                  net_normal, net_loose, positions, self.batch_size)
-        flops = self.Flops[positions[0]]
+        bacc, acc, y_pred_a, y_true_a = test_full(self.device, net_base, net_coarse, net_fine_0, 
+                                                  net_fine_1, net_fine_2, positions, self.batch_size)
+        
+        flops = self.Flops[positions[0]]*(51+2278+394)
+        for i in range(1, len(positions)):
+            if positions[i] > positions[0]:
+                flops +self.Flops[positions[i]]*self.num_train[i-1]
+        flops = flops / (51+2278+394)
         print("### One RL epoch costs %s seconds ###" %(time.time() - start_time))
-        return [bacc, flops*(10**6)]
+        return [bacc, flops]
 
 def get_parser():
     """
@@ -99,7 +103,7 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
     trainer = Trainer(device=torch.device('cuda:'+args.cuda))
-    trainer.train([18, 18, 18, 18])
+    trainer.train([0, 0, 0, 0])
     
 if __name__ == '__main__':
     main()
