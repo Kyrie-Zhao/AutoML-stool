@@ -36,7 +36,7 @@ class Environment(object):
         self.s_bound = s_bound
         self.da_memory = []
         self.train = train
-        self.trainer = Trainer()
+        self.trainer = Trainer(device=torch.device('cuda:2'))
         self.rl_model = Ddpg(self.dis_dim, self.scal_dim, self.s_dim, self.scal_var, self.a_bound)
 
         if (self.flag_DA == 1):
@@ -172,17 +172,21 @@ class Environment(object):
                 self.action.append(action)
             else:
                 action_raw = self.rl_model.choose_action(state)
-                action = []
-                for x in action_raw:
-                    if x > action_raw[0]:
-                        action.append(int(action_raw[0]))
-                    else:
-                        action.append(int(x))
-#                 action = [int(x) for x in action_raw ]
+#                 action = []
+#                 for x in action_raw:
+#                     if x > action_raw[0]:
+#                         action.append(int(action_raw[0]))
+#                     else:
+#                         action.append(int(x))
+                action = [int(x) for x in action_raw ]
                 self.action.append(action)
 
             late_rl = time.time() - late_rl
-            next_state, reward = self.take_action(action, late_rl)
+            try:
+                next_state, reward = self.take_action(action, late_rl)
+            except Exception as e:
+                print(e)
+                break
 
             print("STATE ACTION REWARD NEXT")
             print('Current State:', state)
@@ -203,22 +207,22 @@ class Environment(object):
 
             state = next_state
 
-        itemZip = dict(zip(self.epoch,self.accuracy_epoch))
-        with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
-            json.dump(itemZip, fs)
+            itemZip = dict(zip(self.epoch,self.accuracy_epoch))
+            with open('accuracy_epoch.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
 
-        itemZip = dict(zip(self.epoch,self.reward))
-        with open('reward_epoch.json', 'w', encoding='utf-8') as fs:
-            json.dump(itemZip, fs)
+            itemZip = dict(zip(self.epoch,self.reward))
+            with open('reward_epoch.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
 
-        itemZip = dict(zip(self.epoch,self.fps))
-        with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
-            json.dump(itemZip, fs)
+            itemZip = dict(zip(self.epoch,self.fps))
+            with open('flops_epoch.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
 
-        #self.action = [tmp.tolist() for tmp in self.action]
-        itemZip = dict(zip(self.epoch,self.action))
-        with open('action.json', 'w', encoding='utf-8') as fs:
-            json.dump(itemZip, fs)
+            #self.action = [tmp.tolist() for tmp in self.action]
+            itemZip = dict(zip(self.epoch,self.action))
+            with open('action.json', 'w', encoding='utf-8') as fs:
+                json.dump(itemZip, fs)
 
 def get_parser():
     """
